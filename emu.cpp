@@ -1,18 +1,9 @@
-/* IDP emulator for LM32.
-
-THIS FILE IS MACHINE GENERATED WITH CGEN.
-
-Copyright (C) 2000-2010 Red Hat, Inc.
-
-This file is part of the Red Hat simulators.
-
-
+/* IDP emulator for LM32 - thanks to Proxima's proc gen
 */
 
 
 #include "lm32.hpp"
 
-std::map<uint16, uval_t> mvhi;
 
 static void make_stack_var(const insn_t& insn, const op_t& x)
 {
@@ -68,7 +59,7 @@ static size_t get_switch_entries(const insn_t& insn)
     bool found = false;
     insn_t prev;
     ea_t prev_ea;
-    uint16 sli_reg=0xFFFF;
+    unsigned short sli_reg=0xFFFF;
     prev_ea= decode_prev_insn(&prev, insn.ea);
     for (int i = 0; i < 0x10; i++)
     {
@@ -103,7 +94,7 @@ static ea_t get_switch_table_addr(const insn_t& insn)
     bool found = false;
     insn_t prev;
     ea_t prev_ea;
-    uint16 add_reg = 0xFFFF;
+    unsigned short add_reg = 0xFFFF;
     prev_ea = decode_prev_insn(&prev, insn.ea);
     for (int i = 0; i < 0x10; i++)
     {
@@ -141,7 +132,7 @@ static ea_t get_switch_default_addr(const insn_t& insn)
     bool found = false;
     insn_t prev;
     ea_t prev_ea;
-    uint16 bne_reg = 0xFFFF;
+    unsigned short bne_reg = 0xFFFF;
     prev_ea = decode_prev_insn(&prev, insn.ea);
     for (int i = 0; i < 0x10; i++)
     {
@@ -168,7 +159,7 @@ static ea_t get_switch_default_addr(const insn_t& insn)
     return defjump;
 }
 bool LM32_t::LM32_is_switch(switch_info_t* si, const insn_t& insn) {
-    if (insn.Op1.type == o_reg && insn.Op1.reg == 2)
+    if (insn.Op1.type == o_reg && insn.Op1.reg < 26)
     {
         // Find the values needed to create the switch.
         size_t num_entries;
@@ -190,7 +181,7 @@ bool LM32_t::LM32_is_switch(switch_info_t* si, const insn_t& insn) {
             si->set_shift(0);  // No shift operation on the index
             si->set_elbase(0);  // No base address for the jump table elements
             si->defjump = default_addr;
-            si->regnum = 2;
+            si->regnum = insn.Op1.reg;
 
             return true;
         }
@@ -199,38 +190,71 @@ bool LM32_t::LM32_is_switch(switch_info_t* si, const insn_t& insn) {
     return false;
 
 }
-
-static void fuse_far_ptrs(const insn_t& insn)
+static void hi_lo_pairs(const insn_t& insn)
 {
-    /* MVHI and ORI pairs */
     ea_t target = BADADDR;
-
-    if (insn.itype == LM32_INSN_MVHI)
-        mvhi.insert(std::map<uint16, uval_t>::value_type(insn.Op1.reg, insn.Op2.value));
-    if (insn.itype == LM32_INSN_OR && mvhi.count(insn.Op2.reg) > 0)
-        mvhi.insert(std::map<uint16, uval_t>::value_type(insn.Op1.reg, mvhi.at(insn.Op2.reg)));
-    if (insn.itype == LM32_INSN_ORI && mvhi.count(insn.Op1.reg) > 0)
+    bool found = false;
+    insn_t prev;
+    ea_t prev_ea;
+    unsigned short use_reg = 0xFFFF;
+    // Look for MVHI and ORI pairs
+    prev_ea = decode_prev_insn(&prev, insn.ea);
+    if (insn.itype == LM32_INSN_ORI)
     {
-        target = mvhi.at(insn.Op1.reg) << 0x10 | insn.Op3.value;
-        op_offset(insn.ea, 0x2, REF_LOW16, target);
-        if (target <= 0x40000)
+        for (int i = 0; i < 0x10; i++)
         {
-            insn.add_dref(target, insn.ea, dr_O);
-            /*
-
-            Commenting out for now, we can decide later if we want to put comments instead
-            or maybe if they are registers, have the name?
-
-            } else if (target >= 0x40000) {
-                char comment[MAXSTR];
-                qsnprintf(comment, sizeof comment, "0x%08X", target);
-                set_cmt(insn.ea, comment, false);
-
-            */
+            if (prev.itype == LM32_INSN_MVHI)
+            {
+                if (insn.Op2.reg == prev.Op1.reg)
+                {
+                    found = true;
+                    target = (prev.Op2.value << 0x10) | insn.Op3.value;
+                    op_offset(insn.ea, 0x2, REF_LOW16, target);
+                    if (target <= 0x40000)
+                    {
+                        insn.add_dref(target, insn.ea, dr_O);
+                    }
+                    else if (target >= 0x40000) {
+                        char comment[MAXSTR];
+                        qsnprintf(comment, sizeof comment, "0x%08X", target);
+                        set_cmt(insn.ea, comment, false);
+                    }
+                }
+            }
+            if (found) break;
+            else prev_ea = decode_prev_insn(&prev, prev_ea);
         }
-        mvhi.erase(insn.Op1.reg);
+    }
+    // Look for MVUI and ORHII pairs
+    prev_ea = decode_prev_insn(&prev, insn.ea);
+    if (insn.itype == LM32_INSN_ORHII)
+    {
+        for (int i = 0; i < 0x10; i++)
+        {
+            if (prev.itype == LM32_INSN_MVUI)
+            {
+                if (insn.Op2.reg == prev.Op1.reg)
+                {
+                    found = true;
+                    target = prev.Op2.value | (insn.Op3.value << 0x10);
+                    op_offset(insn.ea, 0x2, REF_HIGH16, target);
+                    if (target <= 0x40000)
+                    {
+                        insn.add_dref(target, insn.ea, dr_O);
+                    }
+                    else if (target >= 0x40000) {
+                        char comment[MAXSTR];
+                        qsnprintf(comment, sizeof comment, "0x%08X", target);
+                        set_cmt(insn.ea, comment, false);
+                    }
+                }
+            }
+            if (found) break;
+            else prev_ea = decode_prev_insn(&prev, prev_ea);
+        }
     }
 }
+
 
 // ********** x-invalid: --invalid--
 
@@ -248,9 +272,9 @@ static int LM32_emu_standard_insn(const insn_t& insn)
 
 static int LM32_emu_addi(const insn_t& insn)
 {
-    if (insn.Op1.reg == REGS_HW_H_SP && insn.Op2.reg == REGS_HW_H_SP)
+    if (insn.Op1.reg == OPVAL_HW_H_SP && insn.Op2.reg == OPVAL_HW_H_SP)
         add_sp(insn, (sval_t)insn.Op3.value);
-    if (insn.Op1.reg != REGS_HW_H_SP && insn.Op2.reg == REGS_HW_H_SP)
+    if (insn.Op1.reg != OPVAL_HW_H_SP && insn.Op2.reg == OPVAL_HW_H_SP)
         make_stack_var(insn, insn.Op3);
 
     return 4;
@@ -292,46 +316,27 @@ static int LM32_emu_branch(const insn_t& insn)
     return 4;
 }
 
-
-// ********** call: call $r0
-/*
-static int LM32_emu_call (const insn_t &insn)
+static int LM32_emu_calli(const insn_t& insn)
 {
-    ea_t pc = insn.ea;
-    int valid = 1;
-
-    {
-        ADDSI (pc, 4);
-        { USI val = [&valid](){ valid = 0; return 0; }(); if (valid) insn_add_cref(insn, val,0, has_insn_feature(insn.itype, CF_CALL) ? fl_CN : fl_JN); }
-    }
-
-    return 4;
-}
-*/
-
-// ********** calli: calli $call
-
-static int LM32_emu_calli (const insn_t &insn)
-{
-    USI val;
+    unsigned int val;
     if (insn.Op1.type == o_near || insn.Op1.type == o_far) {
-        val = static_cast<USI>(insn.Op1.addr);
+        val = static_cast<unsigned int>(insn.Op1.addr);
     }
     else {
-        val = static_cast<USI>(insn.Op1.value);
+        val = static_cast<unsigned int>(insn.Op1.value);
     }
 
 
     cref_t flag = has_insn_feature(insn.itype, CF_CALL) ? fl_CN : fl_JN;
     insn_add_cref(insn, val, 0, flag);
-    
+
     return 4;
 }
 
 
-static int LM32_emu_load(const insn_t & insn)
+static int LM32_emu_load(const insn_t& insn)
 {
-    if (insn.Op2.reg == REGS_HW_H_SP)
+    if (insn.Op2.reg == OPVAL_HW_H_SP)
         make_stack_var(insn, insn.Op2);
     return 4;
 }
@@ -339,7 +344,7 @@ static int LM32_emu_load(const insn_t & insn)
 
 static int LM32_emu_store(const insn_t& insn)
 {
-    if (insn.Op1.reg == REGS_HW_H_SP)
+    if (insn.Op1.reg == OPVAL_HW_H_SP)
         make_stack_var(insn, insn.Op1);
     return 4;
 }
@@ -348,39 +353,33 @@ static int LM32_emu_store(const insn_t& insn)
 int LM32_t::LM32_emu(const insn_t& insn)
 {
     int len;
-
     switch (insn.itype)
     {
-    case LM32_INSN_X_INVALID: len = LM32_emu_x_invalid(insn); break;
-    case LM32_INSN_B:
+    case LM32_INSN_X_INVALID:
+        len = LM32_emu_x_invalid(insn); break;
     case LM32_INSN_ADD:
     case LM32_INSN_AND:
     case LM32_INSN_ANDI:
     case LM32_INSN_ANDHII:
-    case LM32_INSN_RET:
-    case LM32_INSN_ERET:
-    case LM32_INSN_BRET:
+    case LM32_INSN_B:
+    case LM32_INSN_CALL:
     case LM32_INSN_CMPE:
     case LM32_INSN_CMPEI:
     case LM32_INSN_CMPG:
     case LM32_INSN_CMPGI:
     case LM32_INSN_CMPGE:
+    case LM32_INSN_CMPGEI:
     case LM32_INSN_CMPGEU:
     case LM32_INSN_CMPGEUI:
     case LM32_INSN_CMPGU:
     case LM32_INSN_CMPGUI:
     case LM32_INSN_CMPNE:
     case LM32_INSN_CMPNEI:
-    case LM32_INSN_CMPGEI:
     case LM32_INSN_DIVU:
     case LM32_INSN_MODU:
     case LM32_INSN_MUL:
     case LM32_INSN_MULI:
-    case LM32_INSN_MV:
-    case LM32_INSN_MVI:
-    case LM32_INSN_MVHI:
     case LM32_INSN_NOR:
-    case LM32_INSN_NOP:
     case LM32_INSN_NORI:
     case LM32_INSN_OR:
     case LM32_INSN_ORI:
@@ -403,31 +402,44 @@ int LM32_t::LM32_emu(const insn_t& insn)
     case LM32_INSN_XNORI:
     case LM32_INSN_BREAK:
     case LM32_INSN_SCALL:
-    case LM32_INSN_CALL:
+    case LM32_INSN_BRET:
+    case LM32_INSN_ERET:
+    case LM32_INSN_RET:
+    case LM32_INSN_MV:
+    case LM32_INSN_MVI:
+    case LM32_INSN_MVUI:
+    case LM32_INSN_MVHI:
+    case LM32_INSN_MVA:
+    case LM32_INSN_NOT:
+    case LM32_INSN_NOP:
         len = LM32_emu_standard_insn(insn); break;
     case LM32_INSN_CALLI:
         len = LM32_emu_calli(insn); break;
-    case LM32_INSN_ADDI: len = LM32_emu_addi(insn); break;
-    case LM32_INSN_BI: len = LM32_emu_bi(insn); break;
+    case LM32_INSN_BI:
+        len = LM32_emu_bi(insn); break;
     case LM32_INSN_BE:
     case LM32_INSN_BG:
     case LM32_INSN_BGE:
     case LM32_INSN_BGEU:
     case LM32_INSN_BGU:
-    case LM32_INSN_BNE: len = LM32_emu_branch(insn); break;
-
+    case LM32_INSN_BNE:
+        len = LM32_emu_branch(insn); break;
     case LM32_INSN_LB:
     case LM32_INSN_LBU:
     case LM32_INSN_LH:
     case LM32_INSN_LHU:
-    case LM32_INSN_LW: len = LM32_emu_load(insn); break;
+    case LM32_INSN_LW:
+        len = LM32_emu_load(insn); break;
     case LM32_INSN_SB:
     case LM32_INSN_SH:
-    case LM32_INSN_SW: len = LM32_emu_store(insn); break;
+    case LM32_INSN_SW:
+        len = LM32_emu_store(insn); break;
+    case LM32_INSN_ADDI:
+        len = LM32_emu_addi(insn); break;
     default: len = 0; break;
     }
 
-    fuse_far_ptrs(insn);
+    hi_lo_pairs(insn);
 
     if (len && !has_insn_feature(insn.itype, CF_STOP))
         insn_add_cref(insn, insn.ea + len, 0, fl_F);

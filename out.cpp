@@ -1,25 +1,4 @@
-/* LM32 IDP output
-
-THIS FILE IS MACHINE GENERATED WITH CGEN.
-
-Copyright 1996-2010 Free Software Foundation, Inc.
-
-This file is part of the GNU Binutils and/or GDB, the GNU debugger.
-
-   This file is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3, or (at your option)
-   any later version.
-
-   It is distributed in the hope that it will be useful, but WITHOUT
-   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
-   License for more details.
-
-   You should have received a copy of the GNU General Public License along
-   with this program; if not, write to the Free Software Foundation, Inc.,
-   51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
-
+/* LM32 IDP output - thanks to Proxima's proc gen
 */
 
 #include "lm32.hpp"
@@ -31,9 +10,6 @@ public:
     void out_insn(void);
 private:
     void out_print_address(const op_t& x, ea_t pc, int n = 0);
-    void out_print_spreg(const op_t&/*x*/, ea_t /*pc*/);
-    void out_print_fpreg(const op_t&/*x*/, ea_t /*pc*/);
-    bool cgen_outop(const op_t& x, uint16 opindex, ea_t pc);
 };
 CASSERT(sizeof(out_LM32_t) == sizeof(outctx_t));
 
@@ -79,72 +55,49 @@ void out_LM32_t::out_print_address(const op_t& x, ea_t pc, int n)
     }
 }
 
-void out_LM32_t::out_print_spreg(const op_t&/*x*/, ea_t /*pc*/)
+bool out_LM32_t::out_operand(const op_t& x)
 {
-    out_register("$sp");
-}
+    uint16 opindex = x.lm32_type;
+    ea_t pc = insn.ea;
 
-void out_LM32_t::out_print_fpreg(const op_t&/*x*/, ea_t /*pc*/)
-{
-    out_register("$fp");
-}
-
-
-bool out_LM32_t::cgen_outop(const op_t& x, uint16 opindex, ea_t pc)
-{
     switch (opindex)
     {
-    case LM32_OPERAND_BRANCH:
-        if (!out_name_expr(x, x.addr)) out_value(x, OOF_ADDR | OOFS_NOSIGN | OOFW_IMM);
-        break;
-    case LM32_OPERAND_CALL:
-        if (!out_name_expr(x, x.addr)) out_value(x, OOF_ADDR | OOFS_NOSIGN | OOFW_IMM);
-        break;
+    case LM32_OPERAND_R2:
+    case LM32_OPERAND_R0:
+    case LM32_OPERAND_R1:
     case LM32_OPERAND_CSR:
-        out_register(ph.reg_names[x.reg]);
-        break;
-    case LM32_OPERAND_EXCEPTION:
-        out_value(x, OOF_NUMBER | OOFW_IMM);
-        break;
-    case LM32_OPERAND_HI16:
-        if (x.type == o_imm)
-            out_value(x, OOF_SIGNED | OOF_NUMBER | OOFW_IMM);
-        else if (x.type == o_mem)
-            out_print_address(x, pc, x.n);
+        if (x.type == o_displ)
+        {
+            out_register(ph.reg_names[x.reg]);
+            out_value(x, OOF_ADDR | OOF_SIGNED | OOFS_NEEDSIGN);
+        }
+        else if (x.type == o_reg)
+            out_register(ph.reg_names[x.reg]);
+        else
+            //something wrong - add messaging here
+            out_symbol('?');
         break;
     case LM32_OPERAND_IMM:
         if (x.type == o_imm)
             out_value(x, OOF_SIGNED | OOF_NUMBER | OOFW_IMM);
         else if (x.type == o_mem)
             out_print_address(x, pc, x.n);
+        else
+            out_symbol('?');
+        break;
+    case LM32_OPERAND_CALL:
+    case LM32_OPERAND_BRANCH:
+        if (!out_name_expr(x, x.addr)) out_value(x, OOF_ADDR | OOFS_NOSIGN | OOFW_IMM);
         break;
     case LM32_OPERAND_LO16:
-        if (x.type == o_imm)
-            out_value(x, OOF_SIGNED | OOF_NUMBER | OOFW_IMM);
-        else if (x.type == o_mem)
-            out_print_address(x, pc, x.n);
-        break;
-    case LM32_OPERAND_R0:
-    case LM32_OPERAND_R1:
-    case LM32_OPERAND_R2:
-        out_register(ph.reg_names[x.reg]);
-        break;
-    case LM32_OPERAND_SHIFT:
-        out_value(x, OOF_NUMBER | OOFW_IMM);
-        break;
     case LM32_OPERAND_UIMM:
+    case LM32_OPERAND_HI16:
         if (x.type == o_imm)
             out_value(x, OOF_NUMBER | OOFW_IMM);
         else if (x.type == o_mem)
             out_print_address(x, pc, x.n);
-        //out_value(x,OOF_ADDR|OOF_NUMBER|OOFW_IMM);
-        break;
-    case LM32_OPERAND_DISPL:
-        out_register(ph.reg_names[x.reg]);
-        out_value(x, OOF_ADDR | OOF_SIGNED | OOFS_NEEDSIGN);
-        break;
-    case LM32_OPERAND_USER:
-        out_value(x, OOF_ADDR | OOF_NUMBER | OOFW_IMM);
+        else
+            out_symbol('?');
         break;
     default:
         return 0;
@@ -152,17 +105,11 @@ bool out_LM32_t::cgen_outop(const op_t& x, uint16 opindex, ea_t pc)
 
     return 1;
 }
-
-bool out_LM32_t::out_operand(const op_t& x)
-{
-    return cgen_outop(x, x.cgen_optype, insn.ea);
-}
-
 void out_LM32_t::out_insn(void)
 {
     switch (insn.itype)
     {
-        // These all use the standard 3 op type
+        // M0,1,2
     case LM32_INSN_ADD:
     case LM32_INSN_ADDI:
     case LM32_INSN_AND:
@@ -186,6 +133,8 @@ void out_LM32_t::out_insn(void)
     case LM32_INSN_CMPGUI:
     case LM32_INSN_CMPNE:
     case LM32_INSN_CMPNEI:
+    case LM32_INSN_DIVU:
+    case LM32_INSN_MODU:
     case LM32_INSN_MUL:
     case LM32_INSN_MULI:
     case LM32_INSN_NOR:
@@ -213,7 +162,7 @@ void out_LM32_t::out_insn(void)
         out_char(' ');
         out_one_operand(2);
         break;
-        // These are specific
+        // M0
     case LM32_INSN_B:
     case LM32_INSN_BI:
     case LM32_INSN_CALL:
@@ -221,22 +170,13 @@ void out_LM32_t::out_insn(void)
         out_mnem();
         out_one_operand(0);
         break;
-    case LM32_INSN_DIVU:
-    case LM32_INSN_MODU:
-        out_mnem();
-        cgen_outop(insn.Op1, LM32_OPERAND_R2, insn.ea);
-        out_symbol(',');
-        out_char(' ');
-        cgen_outop(insn.Op2, LM32_OPERAND_R0, insn.ea);
-        out_symbol(',');
-        out_char(' ');
-        cgen_outop(insn.Op3, LM32_OPERAND_R1, insn.ea);
-        break;
+        // M0,(1+2)
     case LM32_INSN_LB:
     case LM32_INSN_LBU:
     case LM32_INSN_LH:
     case LM32_INSN_LHU:
     case LM32_INSN_LW:
+        // This has a displacement, so the '+ imm' is embedded in the operand
         out_mnem();
         out_one_operand(0);
         out_symbol(',');
@@ -245,21 +185,28 @@ void out_LM32_t::out_insn(void)
         out_one_operand(1);
         out_symbol(')');
         break;
+        // M0,1
     case LM32_INSN_RCSR:
     case LM32_INSN_SEXTB:
     case LM32_INSN_SEXTH:
-    case LM32_INSN_MVI:
+    case LM32_INSN_WCSR:
     case LM32_INSN_MV:
+    case LM32_INSN_MVI:
+    case LM32_INSN_MVUI:
     case LM32_INSN_MVHI:
+    case LM32_INSN_MVA:
+    case LM32_INSN_NOT:
         out_mnem();
         out_one_operand(0);
         out_symbol(',');
         out_char(' ');
         out_one_operand(1);
         break;
+        // M(0+1),2
     case LM32_INSN_SB:
     case LM32_INSN_SH:
     case LM32_INSN_SW:
+        // This has a displacement, so the '+ imm' is embedded in the operand
         out_mnem();
         out_symbol('(');
         out_one_operand(0);
@@ -268,6 +215,7 @@ void out_LM32_t::out_insn(void)
         out_char(' ');
         out_one_operand(1);
         break;
+        // M0,1,2,3
     case LM32_INSN_USER:
         out_mnem();
         out_one_operand(0);
@@ -281,24 +229,17 @@ void out_LM32_t::out_insn(void)
         out_char(' ');
         out_one_operand(3);
         break;
-    case LM32_INSN_WCSR:
-        out_mnem();
-        cgen_outop(insn.Op1, LM32_OPERAND_CSR, insn.ea);
-        out_symbol(',');
-        out_char(' ');
-        out_one_operand(1);
-        break;
-    case LM32_INSN_NOP:
-    case LM32_INSN_RET:
-    case LM32_INSN_ERET:
-    case LM32_INSN_BRET:
+        // M
     case LM32_INSN_BREAK:
     case LM32_INSN_SCALL:
+    case LM32_INSN_BRET:
+    case LM32_INSN_ERET:
+    case LM32_INSN_RET:
+    case LM32_INSN_NOP:
         out_mnem();
         break;
     default:
         break;
     }
-
     flush_outbuf();
 }

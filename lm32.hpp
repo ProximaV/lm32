@@ -1,24 +1,4 @@
-/* LM32 IDP hardware defines
-
-THIS FILE IS MACHINE GENERATED WITH CGEN.
-
-Copyright 1996-2010 Free Software Foundation, Inc.
-
-This file is part of the GNU Binutils and/or GDB, the GNU debugger.
-
-   This file is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3, or (at your option)
-   any later version.
-
-   It is distributed in the hope that it will be useful, but WITHOUT
-   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
-   License for more details.
-
-   You should have received a copy of the GNU General Public License along
-   with this program; if not, write to the Free Software Foundation, Inc.,
-   51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
+/* LM32 IDP hardware defines - thanks to Proxima's proc gen
 
 */
 
@@ -45,123 +25,41 @@ This file is part of the GNU Binutils and/or GDB, the GNU debugger.
 #include "../idaidp.hpp"
 #include "../iohandler.hpp"
 
-/* needed for cgen.h */
-#define CGEN_ARCH LM32
-#define CGEN_SYM(s) LM32##_cgen_##s
+#define lm32_type specval_shorts.low
 
-/* for referring to operand type in cmd */
-#define cgen_optype specval_shorts.low
 
-/* Offsets for register names by cgen hw name */
 
-#define REGS_HW_H_PC_BASE 0
-#define REGS_HW_H_GR_BASE 1
-#define REGS_HW_H_CSR_BASE 33
+#define OPVAL_H_GR_BASE  0
+#define OPVAL_H_CSR_BASE  32
 #define REGS_COUNT 65
-#define REGS_HW_H_SP 29
-/* Hardware attribute indices.  */
+#define OPVAL_HW_H_SP 28
 
-/* Enum declaration for cgen_hw attrs.  */
-typedef enum cgen_hw_attr {
-    CGEN_HW_VIRTUAL,
-    CGEN_HW_CACHE_ADDR,
-    CGEN_HW_PC,
-    CGEN_HW_PROFILE,
-    CGEN_HW_END_BOOLS,
-    CGEN_HW_START_NBOOLS = 31,
-    CGEN_HW_MACH,
-    CGEN_HW_END_NBOOLS
-} CGEN_HW_ATTR;
-
-/* Number of non-boolean elements in cgen_hw_attr.  */
-#define CGEN_HW_NBOOL_ATTRS (CGEN_HW_END_NBOOLS - CGEN_HW_START_NBOOLS - 1)
-
-/* cgen_hw attribute accessor macros.  */
-#define CGEN_ATTR_CGEN_HW_MACH_VALUE(attrs) ((attrs)->nonbool[CGEN_HW_MACH-CGEN_HW_START_NBOOLS-1].nonbitset)
-#define CGEN_ATTR_CGEN_HW_VIRTUAL_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_HW_VIRTUAL)) != 0)
-#define CGEN_ATTR_CGEN_HW_CACHE_ADDR_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_HW_CACHE_ADDR)) != 0)
-#define CGEN_ATTR_CGEN_HW_PC_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_HW_PC)) != 0)
-#define CGEN_ATTR_CGEN_HW_PROFILE_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_HW_PROFILE)) != 0)
-
-/* Enum declaration for LM32 hardware types.  */
-typedef enum cgen_hw_type {
-    HW_H_MEMORY,
-    HW_H_SINT,
-    HW_H_UINT,
-    HW_H_ADDR,
-    HW_H_IADDR,
-    HW_H_PC,
-    HW_H_GR,
-    HW_H_CSR,
-    HW_MAX
-} CGEN_HW_TYPE;
-
-#define MAX_HW ((int) HW_MAX)
-
-/* Operand attribute indices.  */
-
-/* Enum declaration for cgen_operand attrs.  */
-typedef enum cgen_operand_attr {
-    CGEN_OPERAND_VIRTUAL,
-    CGEN_OPERAND_PCREL_ADDR,
-    CGEN_OPERAND_ABS_ADDR,
-    CGEN_OPERAND_SIGN_OPT,
-    CGEN_OPERAND_SIGNED,
-    CGEN_OPERAND_NEGATIVE,
-    CGEN_OPERAND_RELAX,
-    CGEN_OPERAND_SEM_ONLY,
-    CGEN_OPERAND_END_BOOLS,
-    CGEN_OPERAND_START_NBOOLS = 31,
-    CGEN_OPERAND_MACH,
-    CGEN_OPERAND_END_NBOOLS
-} CGEN_OPERAND_ATTR;
-
-/* Number of non-boolean elements in cgen_operand_attr.  */
-#define CGEN_OPERAND_NBOOL_ATTRS (CGEN_OPERAND_END_NBOOLS - CGEN_OPERAND_START_NBOOLS - 1)
-
-/* cgen_operand attribute accessor macros.  */
-#define CGEN_ATTR_CGEN_OPERAND_MACH_VALUE(attrs) ((attrs)->nonbool[CGEN_OPERAND_MACH-CGEN_OPERAND_START_NBOOLS-1].nonbitset)
-#define CGEN_ATTR_CGEN_OPERAND_VIRTUAL_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_VIRTUAL)) != 0)
-#define CGEN_ATTR_CGEN_OPERAND_PCREL_ADDR_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_PCREL_ADDR)) != 0)
-#define CGEN_ATTR_CGEN_OPERAND_ABS_ADDR_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_ABS_ADDR)) != 0)
-#define CGEN_ATTR_CGEN_OPERAND_SIGN_OPT_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_SIGN_OPT)) != 0)
-#define CGEN_ATTR_CGEN_OPERAND_SIGNED_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_SIGNED)) != 0)
-#define CGEN_ATTR_CGEN_OPERAND_NEGATIVE_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_NEGATIVE)) != 0)
-#define CGEN_ATTR_CGEN_OPERAND_RELAX_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_RELAX)) != 0)
-#define CGEN_ATTR_CGEN_OPERAND_SEM_ONLY_VALUE(attrs) (((attrs)->bool_ & (1 << CGEN_OPERAND_SEM_ONLY)) != 0)
-
-/* Enum declaration for LM32 operand types.  */
-typedef enum cgen_operand_type {
+typedef enum lm32_operand_type {
     LM32_OPERAND_PC,
     LM32_OPERAND_R0,
-    LM32_OPERAND_R1, 
+    LM32_OPERAND_R1,
     LM32_OPERAND_R2,
     LM32_OPERAND_SHIFT,
     LM32_OPERAND_IMM,
     LM32_OPERAND_UIMM,
     LM32_OPERAND_BRANCH,
     LM32_OPERAND_CALL,
-    LM32_OPERAND_CSR, 
-    LM32_OPERAND_USER, 
+    LM32_OPERAND_CSR,
+    LM32_OPERAND_USER,
     LM32_OPERAND_EXCEPTION,
-    LM32_OPERAND_HI16, 
+    LM32_OPERAND_HI16,
     LM32_OPERAND_LO16,
     LM32_OPERAND_GP16,
     LM32_OPERAND_GOT16,
     LM32_OPERAND_GOTOFFHI16,
     LM32_OPERAND_GOTOFFLO16,
-    LM32_OPERAND_MAX, 
-    LM32_OPERAND_DISPL
- } CGEN_OPERAND_TYPE;
+} LM32_OPERAND_TYPE;
 
 /* Number of operands types.  */
 #define MAX_OPERANDS 18
 
 /* Maximum number of operands referenced by any insn.  */
 #define MAX_OPERAND_INSTANCES 6
-
-/* cgen.h must be included after all that decls */
-#include "cgen.h"
 
 /* IDP exports */
 

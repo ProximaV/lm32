@@ -1,920 +1,1558 @@
-/* LM32 IDP analysis
-
-THIS FILE IS MACHINE GENERATED WITH CGEN.
-
-Copyright 1996-2010 Free Software Foundation, Inc.
-
-This file is part of the GNU Binutils and/or GDB, the GNU debugger.
-
-   This file is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3, or (at your option)
-   any later version.
-
-   It is distributed in the hope that it will be useful, but WITHOUT
-   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
-   License for more details.
-
-   You should have received a copy of the GNU General Public License along
-   with this program; if not, write to the Free Software Foundation, Inc.,
-   51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
-
+/* LM32 IDP analysis - based on Proxima's proc gen
 */
 #pragma warning (disable : 4146)
 #include "lm32.hpp"
 
-/* The size of an "int" needed to hold an instruction word.
-   This is usually 32 bits, but some architectures needs 64 bits. */
-typedef CGEN_INSN_INT CGEN_INSN_WORD;
+typedef unsigned int INSN;
 
-/* Split the instruction into chunks. stolen from binutils */
-static inline uint64_t get_bits(const void* p, int bits, int big_p)
+int f_nil(INSN insn) { return (insn >> 1) & 0x0; }
+int f_anyof(INSN insn) { return (insn >> 1) & 0x0; }
+int f_opcode(INSN insn) { return (insn >> 26) & 0x3f; }
+int f_r0(INSN insn) { return (insn >> 21) & 0x1f; }
+int f_r1(INSN insn) { return (insn >> 16) & 0x1f; }
+int f_r2(INSN insn) { return (insn >> 11) & 0x1f; }
+int f_resv0(INSN insn) { return (insn >> 0) & 0x7ff; }
+int f_shift(INSN insn) { return (insn >> 0) & 0x1f; }
+int f_imm(INSN insn)
 {
-    const unsigned char* addr = (const unsigned char*)p;
-    uint64_t data;
-    int i;
-    int bytes;
-
-    if (bits % 8 != 0)
-        abort();
-
-    data = 0;
-    bytes = bits / 8;
-    for (i = 0; i < bytes; i++) {
-        int addr_index = big_p ? i : bytes - i - 1;
-        data = (data << 8) | addr[addr_index];
-    }
-
-    return data;
+    int val = (insn >> 0);
+    val &= 0xffff;
+    if (val & 0x8000) return val - 0x10000;
+    else return val;
 }
-
-static inline CGEN_INSN_WORD get_insn_value(unsigned char* buf, int length)
+int f_uimm(INSN insn) { return (insn >> 0) & 0xffff; }
+int f_csr(INSN insn) { return (insn >> 21) & 0x1f; }
+int f_user(INSN insn) { return (insn >> 0) & 0x7ff; }
+int f_exception(INSN insn)
 {
-    int big_p = 1;
-    int insn_chunk_bitsize = 0;
-    CGEN_INSN_WORD value = 0;
-
-    if (insn_chunk_bitsize != 0 && insn_chunk_bitsize < length)
-    {
-        /* We need to divide up the incoming value into insn_chunk_bitsize-length
-           segments, and endian-convert them, one at a time. */
-        int i;
-
-        /* Enforce divisibility. */
-        if ((length % insn_chunk_bitsize) != 0)
-            abort();
-
-        for (i = 0; i < length; i += insn_chunk_bitsize)
-        { /* NB: i == bits */
-            int bit_index;
-            uint64_t this_value;
-
-            bit_index = i; /* NB: not dependent on endianness; opposite of cgen_put_insn_value! */
-            this_value = get_bits(&buf[bit_index / 8], insn_chunk_bitsize, big_p);
-            value = (value << insn_chunk_bitsize) | this_value;
-        }
-    }
-    else
-    {
-        value = get_bits(buf, length, big_p);
-    }
-
-    return value;
+    int val = (insn >> 0);
+    val &= 0x3ffffff;
+    if (val & 0x2000000) return val - 0x4000000;
+    else return val;
 }
-
-static inline ea_t calc_reference_target(ea_t from, const refinfo_t& ri, adiff_t opval)
+int f_branch(INSN insn)
 {
-    ea_t target;
-    ea_t base;
-    calc_reference_data(&target, &base, from, ri, opval);
-    //msg("Target 0x%x, Base 0x%x\n", target, base);
-    return target;
+    int val = (insn >> 0);
+    val &= 0xffff;
+    if (val & 0x8000) return val - 0x10000;
+    else return val;
+}
+int f_call(INSN insn)
+{
+    int val = (insn >> 0);
+    val &= 0x3ffffff;
+    if (val & 0x2000000) return val - 0x4000000;
+    else return val;
 }
 
 /* Analyze the current instruction. */
 int LM32_t::LM32_ana(insn_t* _insn)
 {
     insn_t& ida_insn = *_insn;
-    /* temporary buffer */
-    unsigned char buffer[4];
-
-    /* Result of decoder. */
     LM32_INSN_TYPE itype;
-
-    CGEN_INSN_WORD insn;
-    CGEN_INSN_WORD entire_insn;
+    INSN insn;
     ea_t pc;
-    // on lm32, all inatructions are 32 bits, so insn and entire_insn are the same
-    insn = entire_insn = get_dword(ida_insn.ea);
-    //get_data_value((uval_t*)buffer, ida_insn.ea, 4);
-    //insn = get_insn_value(buffer, 32);
-    //entire_insn = get_insn_value(buffer, 32);
-    pc = ida_insn.ea;
-    {
-        {
-            unsigned int val = (((insn >> 26) & (63 << 0)));
 
-            switch (val)
-            {
-            case 0: itype = LM32_INSN_SRUI; goto extract_sfmt_addi;
-            case 1: itype = LM32_INSN_NORI; goto extract_sfmt_andi;
-            case 2: itype = LM32_INSN_MULI; goto extract_sfmt_addi;
-            case 3: itype = LM32_INSN_SH; goto extract_sfmt_sh;
-            case 4: itype = LM32_INSN_LB; goto extract_sfmt_lb;
-            case 5: itype = LM32_INSN_SRI; goto extract_sfmt_addi;
-            case 6: itype = LM32_INSN_XORI; goto extract_sfmt_andi;
-            case 7: itype = LM32_INSN_LH; goto extract_sfmt_lh;
-            case 8: itype = LM32_INSN_ANDI; goto extract_sfmt_andi;
-            case 9: itype = LM32_INSN_XNORI; goto extract_sfmt_andi;
-            case 10: itype = LM32_INSN_LW; goto extract_sfmt_lw;
-            case 11: itype = LM32_INSN_LHU; goto extract_sfmt_lh;
-            case 12: itype = LM32_INSN_SB; goto extract_sfmt_sb;
-            case 13: itype = LM32_INSN_ADDI; goto extract_sfmt_addi;
-            case 14: itype = LM32_INSN_ORI; goto extract_sfmt_ori;
-            case 15: itype = LM32_INSN_SLI; goto extract_sfmt_addi;
-            case 16: itype = LM32_INSN_LBU; goto extract_sfmt_lb;
-            case 17: itype = LM32_INSN_BE; goto extract_sfmt_be;
-            case 18: itype = LM32_INSN_BG; goto extract_sfmt_be;
-            case 19: itype = LM32_INSN_BGE; goto extract_sfmt_be;
-            case 20: itype = LM32_INSN_BGEU; goto extract_sfmt_be;
-            case 21: itype = LM32_INSN_BGU; goto extract_sfmt_be;
-            case 22: itype = LM32_INSN_SW; goto extract_sfmt_sw;
-            case 23: itype = LM32_INSN_BNE; goto extract_sfmt_be;
-            case 24: itype = LM32_INSN_ANDHII; goto extract_sfmt_andhii;
-            case 25: itype = LM32_INSN_CMPEI; goto extract_sfmt_addi;
-            case 26: itype = LM32_INSN_CMPGI; goto extract_sfmt_addi;
-            case 27: itype = LM32_INSN_CMPGEI; goto extract_sfmt_addi;
-            case 28: itype = LM32_INSN_CMPGEUI; goto extract_sfmt_andi;
-            case 29: itype = LM32_INSN_CMPGUI; goto extract_sfmt_andi;
-            case 30: itype = LM32_INSN_ORHII; goto extract_sfmt_orhii;
-            case 31: itype = LM32_INSN_CMPNEI; goto extract_sfmt_addi;
-            case 32:
-                if ((entire_insn & 0xfc0007ff) == 0x80000000) { itype = LM32_INSN_SRU; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 33:
-                if ((entire_insn & 0xfc0007ff) == 0x84000000) { itype = LM32_INSN_NOR; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 34:
-                if ((entire_insn & 0xfc0007ff) == 0x88000000) { itype = LM32_INSN_MUL; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 35:
-                if ((entire_insn & 0xfc0007ff) == 0x8c000000) { itype = LM32_INSN_DIVU; goto extract_sfmt_divu; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 36:
-                if ((entire_insn & 0xfc1f07ff) == 0x90000000) { itype = LM32_INSN_RCSR; goto extract_sfmt_rcsr; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 37:
-                if ((entire_insn & 0xfc0007ff) == 0x94000000) { itype = LM32_INSN_SR; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 38:
-                if ((entire_insn & 0xfc0007ff) == 0x98000000) { itype = LM32_INSN_XOR; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 40:
-                if ((entire_insn & 0xfc0007ff) == 0xa0000000) { itype = LM32_INSN_AND; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 41:
-                if ((entire_insn & 0xfc0007ff) == 0xa4000000) { itype = LM32_INSN_XNOR; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 43:
-            {
-                unsigned int val = (((insn >> 1) & (1 << 1)) | ((insn >> 0) & (1 << 0)));
-                switch (val)
-                {
-                case 0:
-                    if ((entire_insn & 0xffffffff) == 0xac000002) { itype = LM32_INSN_BREAK; goto extract_sfmt_break; }
-                    itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-                case 3:
-                    if ((entire_insn & 0xffffffff) == 0xac000007) { itype = LM32_INSN_SCALL; goto extract_sfmt_break; }
-                    itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-                default:
-                    itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-                }
-            }
-            case 44:
-                if ((entire_insn & 0xfc1f07ff) == 0xb0000000) { itype = LM32_INSN_SEXTB; goto extract_sfmt_sextb; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 45:
-                if ((entire_insn & 0xfc0007ff) == 0xb4000000) { itype = LM32_INSN_ADD; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 46:
-                if ((entire_insn & 0xfc0007ff) == 0xb8000000) { itype = LM32_INSN_OR; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 47:
-                if ((entire_insn & 0xfc0007ff) == 0xbc000000) { itype = LM32_INSN_SL; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 48:
-                if (entire_insn == 0xc3a00000) { itype = LM32_INSN_RET; goto extract_sfmt_nopret; }
-                if (entire_insn == 0xc3c00000) { itype = LM32_INSN_ERET; goto extract_sfmt_nopret; }
-                if (entire_insn == 0xc3e00000) { itype = LM32_INSN_BRET; goto extract_sfmt_nopret; }
-                if ((entire_insn & 0xfc1fffff) == 0xc0000000) { itype = LM32_INSN_B; goto extract_sfmt_b; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 49:
-                if ((entire_insn & 0xfc0007ff) == 0xc4000000) { itype = LM32_INSN_MODU; goto extract_sfmt_divu; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 50:
-                if ((entire_insn & 0xfc0007ff) == 0xc8000000) { itype = LM32_INSN_SUB; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 51: itype = LM32_INSN_USER; goto extract_sfmt_user;
-            case 52:
-                if ((entire_insn & 0xfc00ffff) == 0xd0000000) { itype = LM32_INSN_WCSR; goto extract_sfmt_wcsr; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 54:
-                if ((entire_insn & 0xfc1fffff) == 0xd8000000) { itype = LM32_INSN_CALL; goto extract_sfmt_call; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 55:
-                if ((entire_insn & 0xfc1f07ff) == 0xdc000000) { itype = LM32_INSN_SEXTH; goto extract_sfmt_sextb; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 56: itype = LM32_INSN_BI; goto extract_sfmt_bi;
-            case 57:
-                if ((entire_insn & 0xfc0007ff) == 0xe4000000) { itype = LM32_INSN_CMPE; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 58:
-                if ((entire_insn & 0xfc0007ff) == 0xe8000000) { itype = LM32_INSN_CMPG; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 59:
-                if ((entire_insn & 0xfc0007ff) == 0xec000000) { itype = LM32_INSN_CMPGE; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 60:
-                if ((entire_insn & 0xfc0007ff) == 0xf0000000) { itype = LM32_INSN_CMPGEU; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 61:
-                if ((entire_insn & 0xfc0007ff) == 0xf4000000) { itype = LM32_INSN_CMPGU; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            case 62: itype = LM32_INSN_CALLI; goto extract_sfmt_calli;
-            case 63:
-                if ((entire_insn & 0xfc0007ff) == 0xfc000000) { itype = LM32_INSN_CMPNE; goto extract_sfmt_add; }
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            default:
-                itype = LM32_INSN_X_INVALID; goto extract_sfmt_empty;
-            }
-        }
-    }
+    insn = get_dword(ida_insn.ea);
+    pc = ida_insn.ea;
+    // Pseudo Instruction
+    if ((insn & 0xffffffff) == 0xc3e00000) { itype = LM32_INSN_BRET; goto decode_insn_format_bret; } // bret           
+    if ((insn & 0xffffffff) == 0xc3c00000) { itype = LM32_INSN_ERET; goto decode_insn_format_eret; } // eret           
+    if ((insn & 0xffffffff) == 0xc3a00000) { itype = LM32_INSN_RET; goto decode_insn_format_ret; } // ret            
+    if ((insn & 0xffffffff) == 0x34000000) { itype = LM32_INSN_NOP; goto decode_insn_format_nop; } // nop            
+    // Standard Instruction
+    if ((insn & 0xfc0007ff) == 0xb4000000) { itype = LM32_INSN_ADD; goto decode_insn_format_add; } // add             $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x34000000) { itype = LM32_INSN_ADDI; goto decode_insn_format_addi; } // addi            $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0xa0000000) { itype = LM32_INSN_AND; goto decode_insn_format_and; } // and             $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x20000000) { itype = LM32_INSN_ANDI; goto decode_insn_format_andi; } // andi            $r1,$r0,$uimm
+    if ((insn & 0xfc000000) == 0x60000000) { itype = LM32_INSN_ANDHII; goto decode_insn_format_andhii; } // andhii          $r1,$r0,$hi16
+    if ((insn & 0xfc1fffff) == 0xc0000000) { itype = LM32_INSN_B; goto decode_insn_format_b; } // b               $r0
+    if ((insn & 0xfc000000) == 0xe0000000) { itype = LM32_INSN_BI; goto decode_insn_format_bi; } // bi              $call
+    if ((insn & 0xfc000000) == 0x44000000) { itype = LM32_INSN_BE; goto decode_insn_format_be; } // be              $r0,$r1,$branch
+    if ((insn & 0xfc000000) == 0x48000000) { itype = LM32_INSN_BG; goto decode_insn_format_bg; } // bg              $r0,$r1,$branch
+    if ((insn & 0xfc000000) == 0x4c000000) { itype = LM32_INSN_BGE; goto decode_insn_format_bge; } // bge             $r0,$r1,$branch
+    if ((insn & 0xfc000000) == 0x50000000) { itype = LM32_INSN_BGEU; goto decode_insn_format_bgeu; } // bgeu            $r0,$r1,$branch
+    if ((insn & 0xfc000000) == 0x54000000) { itype = LM32_INSN_BGU; goto decode_insn_format_bgu; } // bgu             $r0,$r1,$branch
+    if ((insn & 0xfc000000) == 0x5c000000) { itype = LM32_INSN_BNE; goto decode_insn_format_bne; } // bne             $r0,$r1,$branch
+    if ((insn & 0xfc1fffff) == 0xd8000000) { itype = LM32_INSN_CALL; goto decode_insn_format_call; } // call            $r0
+    if ((insn & 0xfc000000) == 0xf8000000) { itype = LM32_INSN_CALLI; goto decode_insn_format_calli; } // calli           $call
+    if ((insn & 0xfc0007ff) == 0xe4000000) { itype = LM32_INSN_CMPE; goto decode_insn_format_cmpe; } // cmpe            $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x64000000) { itype = LM32_INSN_CMPEI; goto decode_insn_format_cmpei; } // cmpei           $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0xe8000000) { itype = LM32_INSN_CMPG; goto decode_insn_format_cmpg; } // cmpg            $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x68000000) { itype = LM32_INSN_CMPGI; goto decode_insn_format_cmpgi; } // cmpgi           $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0xec000000) { itype = LM32_INSN_CMPGE; goto decode_insn_format_cmpge; } // cmpge           $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x6c000000) { itype = LM32_INSN_CMPGEI; goto decode_insn_format_cmpgei; } // cmpgei          $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0xf0000000) { itype = LM32_INSN_CMPGEU; goto decode_insn_format_cmpgeu; } // cmpgeu          $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x70000000) { itype = LM32_INSN_CMPGEUI; goto decode_insn_format_cmpgeui; } // cmpgeui         $r1,$r0,$uimm
+    if ((insn & 0xfc0007ff) == 0xf4000000) { itype = LM32_INSN_CMPGU; goto decode_insn_format_cmpgu; } // cmpgu           $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x74000000) { itype = LM32_INSN_CMPGUI; goto decode_insn_format_cmpgui; } // cmpgui          $r1,$r0,$uimm
+    if ((insn & 0xfc0007ff) == 0xfc000000) { itype = LM32_INSN_CMPNE; goto decode_insn_format_cmpne; } // cmpne           $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x7c000000) { itype = LM32_INSN_CMPNEI; goto decode_insn_format_cmpnei; } // cmpnei          $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0x8c000000) { itype = LM32_INSN_DIVU; goto decode_insn_format_divu; } // divu            $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x10000000) { itype = LM32_INSN_LB; goto decode_insn_format_lb; } // lb              $r1,($r0+$imm)
+    if ((insn & 0xfc000000) == 0x40000000) { itype = LM32_INSN_LBU; goto decode_insn_format_lbu; } // lbu             $r1,($r0+$imm)
+    if ((insn & 0xfc000000) == 0x1c000000) { itype = LM32_INSN_LH; goto decode_insn_format_lh; } // lh              $r1,($r0+$imm)
+    if ((insn & 0xfc000000) == 0x2c000000) { itype = LM32_INSN_LHU; goto decode_insn_format_lhu; } // lhu             $r1,($r0+$imm)
+    if ((insn & 0xfc000000) == 0x28000000) { itype = LM32_INSN_LW; goto decode_insn_format_lw; } // lw              $r1,($r0+$imm)
+    if ((insn & 0xfc0007ff) == 0xc4000000) { itype = LM32_INSN_MODU; goto decode_insn_format_modu; } // modu            $r2,$r0,$r1
+    if ((insn & 0xfc0007ff) == 0x88000000) { itype = LM32_INSN_MUL; goto decode_insn_format_mul; } // mul             $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x08000000) { itype = LM32_INSN_MULI; goto decode_insn_format_muli; } // muli            $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0x84000000) { itype = LM32_INSN_NOR; goto decode_insn_format_nor; } // nor             $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x04000000) { itype = LM32_INSN_NORI; goto decode_insn_format_nori; } // nori            $r1,$r0,$uimm
+    if ((insn & 0xfc0007ff) == 0xb8000000) { itype = LM32_INSN_OR; goto decode_insn_format_or; } // or              $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x38000000) { itype = LM32_INSN_ORI; goto decode_insn_format_ori; } // ori             $r1,$r0,$lo16
+    if ((insn & 0xfc000000) == 0x78000000) { itype = LM32_INSN_ORHII; goto decode_insn_format_orhii; } // orhii           $r1,$r0,$hi16
+    if ((insn & 0xfc1f07ff) == 0x90000000) { itype = LM32_INSN_RCSR; goto decode_insn_format_rcsr; } // rcsr            $r2,$csr
+    if ((insn & 0xfc000000) == 0x30000000) { itype = LM32_INSN_SB; goto decode_insn_format_sb; } // sb              ($r0+$imm),$r1
+    if ((insn & 0xfc1f07ff) == 0xb0000000) { itype = LM32_INSN_SEXTB; goto decode_insn_format_sextb; } // sextb           $r2,$r0
+    if ((insn & 0xfc1f07ff) == 0xdc000000) { itype = LM32_INSN_SEXTH; goto decode_insn_format_sexth; } // sexth           $r2,$r0
+    if ((insn & 0xfc000000) == 0x0c000000) { itype = LM32_INSN_SH; goto decode_insn_format_sh; } // sh              ($r0+$imm),$r1
+    if ((insn & 0xfc0007ff) == 0xbc000000) { itype = LM32_INSN_SL; goto decode_insn_format_sl; } // sl              $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x3c000000) { itype = LM32_INSN_SLI; goto decode_insn_format_sli; } // sli             $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0x94000000) { itype = LM32_INSN_SR; goto decode_insn_format_sr; } // sr              $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x14000000) { itype = LM32_INSN_SRI; goto decode_insn_format_sri; } // sri             $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0x80000000) { itype = LM32_INSN_SRU; goto decode_insn_format_sru; } // sru             $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x00000000) { itype = LM32_INSN_SRUI; goto decode_insn_format_srui; } // srui            $r1,$r0,$imm
+    if ((insn & 0xfc0007ff) == 0xc8000000) { itype = LM32_INSN_SUB; goto decode_insn_format_sub; } // sub             $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x58000000) { itype = LM32_INSN_SW; goto decode_insn_format_sw; } // sw              ($r0+$imm),$r1
+    if ((insn & 0xfc000000) == 0xcc000000) { itype = LM32_INSN_USER; goto decode_insn_format_user; } // user            $r2,$r0,$r1,$user
+    if ((insn & 0xfc00ffff) == 0xd0000000) { itype = LM32_INSN_WCSR; goto decode_insn_format_wcsr; } // wcsr            $csr,$r1
+    if ((insn & 0xfc0007ff) == 0x98000000) { itype = LM32_INSN_XOR; goto decode_insn_format_xor; } // xor             $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x18000000) { itype = LM32_INSN_XORI; goto decode_insn_format_xori; } // xori            $r1,$r0,$uimm
+    if ((insn & 0xfc0007ff) == 0xa4000000) { itype = LM32_INSN_XNOR; goto decode_insn_format_xnor; } // xnor            $r2,$r0,$r1
+    if ((insn & 0xfc000000) == 0x24000000) { itype = LM32_INSN_XNORI; goto decode_insn_format_xnori; } // xnori           $r1,$r0,$uimm
+    if ((insn & 0xffffffff) == 0xac000002) { itype = LM32_INSN_BREAK; goto decode_insn_format_break; } // break          
+    if ((insn & 0xffffffff) == 0xac000007) { itype = LM32_INSN_SCALL; goto decode_insn_format_scall; } // scall          
+    else { itype = LM32_INSN_X_INVALID; goto decode_insn_format_empty; }
 
     /* The instruction has been decoded, now extract the fields. */
-
-extract_sfmt_empty:
+decode_insn_format_empty:
     {
         ida_insn.itype = itype;
         ida_insn.size = 0;
-
         return 0;
     }
-
-extract_sfmt_add:
+decode_insn_format_add:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        UINT f_r2;
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_r2 = EXTRACT_LSB0_UINT(insn, 32, 15, 5);
-
-        /* Record the operands */
-        // Handle Pseudo Instruction
-        // mv
-        if (itype == LM32_INSN_OR && f_r1 == 0)
-        {
-            itype = LM32_INSN_MV;
-            ida_insn.Op2.type = o_reg;
-            ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-            ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
-            ida_insn.Op1.type = o_reg;
-            ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r2;
-            ida_insn.Op1.cgen_optype = LM32_OPERAND_R2;
-        }
-        else
-        {
-            ida_insn.Op2.type = o_reg;
-            ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-            ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
-            ida_insn.Op3.type = o_reg;
-            ida_insn.Op3.reg = REGS_HW_H_GR_BASE + f_r1;
-            ida_insn.Op3.cgen_optype = LM32_OPERAND_R1;
-            ida_insn.Op1.type = o_reg;
-            ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r2;
-            ida_insn.Op1.cgen_optype = LM32_OPERAND_R2;
-        }
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_nopret:
-    {
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_addi:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        INT f_imm;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_imm = EXTRACT_LSB0_SINT(insn, 32, 15, 16);
-
-        /* Record the operands */
-        // Handle Pseudo Instructions
-        // nop
-        if (itype == LM32_INSN_ADDI && f_r0 == 0 && f_r1 == 0 && f_imm == 0) {
-            itype = LM32_INSN_NOP;
-        }
-        // mvi
-        else if (itype == LM32_INSN_ADDI && f_r0 == 0)
-        {
-            itype = LM32_INSN_MVI;
-            ida_insn.Op2.type = o_imm;
-            ida_insn.Op2.dtype = get_dtype_by_size(4);
-            ida_insn.Op2.value = f_imm;
-            ida_insn.Op2.cgen_optype = LM32_OPERAND_IMM;
-            ida_insn.Op1.type = o_reg;
-            ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-            ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-        }
-        else
-        {
-            ida_insn.Op3.type = o_imm;
-            ida_insn.Op3.dtype = get_dtype_by_size(4);
-            ida_insn.Op3.value = f_imm;
-            ida_insn.Op3.cgen_optype = LM32_OPERAND_IMM;
-            ida_insn.Op2.type = o_reg;
-            ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-            ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
-            ida_insn.Op1.type = o_reg;
-            ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-            ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-        }
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_andi:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        UINT f_uimm;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_uimm = EXTRACT_LSB0_UINT(insn, 32, 15, 16);
-
-        /* Record the operands */
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
         ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
-        ida_insn.Op3.type = o_imm;
-        ida_insn.Op3.dtype = get_dtype_by_size(4);
-        ida_insn.Op3.value = f_uimm;
-        ida_insn.Op3.cgen_optype = LM32_OPERAND_UIMM;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_andhii:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        UINT f_uimm;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_uimm = EXTRACT_LSB0_UINT(insn, 32, 15, 16);
-
-        /* Record the operands */
-        ida_insn.Op3.type = o_imm;
-        ida_insn.Op3.dtype = get_dtype_by_size(4);
-        ida_insn.Op3.value = f_uimm;
-        ida_insn.Op3.cgen_optype = LM32_OPERAND_HI16;
-        ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_orhii:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        UINT f_uimm;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_uimm = EXTRACT_LSB0_UINT(insn, 32, 15, 16);
-
-        /* Record the operands */
-        //Handle Pseudo Instructions
-        // mvhi
-        if (f_r0 == 0)
-        {
-            itype = LM32_INSN_MVHI;
-            ida_insn.Op2.type = o_imm;
-            ida_insn.Op2.dtype = get_dtype_by_size(4);
-            ida_insn.Op2.value = f_uimm;
-            ida_insn.Op2.cgen_optype = LM32_OPERAND_HI16;
-            ida_insn.Op1.type = o_reg;
-            ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-            ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-
-            refinfo_t ri;
-            if (get_refinfo(&ri, ida_insn.ea, 2))
-            {
-                ida_insn.Op2.type = o_mem;
-                ida_insn.Op2.addr = calc_reference_target(ida_insn.ea, ri, f_uimm);
-            }
-        }
-        else
-        {
-            /* Record the operands */
-            ida_insn.Op3.type = o_imm;
-            ida_insn.Op3.dtype = get_dtype_by_size(4);
-            ida_insn.Op3.value = f_uimm;
-            ida_insn.Op3.cgen_optype = LM32_OPERAND_HI16;
-            ida_insn.Op2.type = o_reg;
-            ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-            ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
-            ida_insn.Op1.type = o_reg;
-            ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-            ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-
-            refinfo_t ri;
-            if (get_refinfo(&ri, ida_insn.ea, 2))
-            {
-                ida_insn.Op3.type = o_mem;
-                ida_insn.Op3.addr = calc_reference_target(ida_insn.ea, ri, f_uimm);
-            }
-        }
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_b:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-
-        /* Record the operands */
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R0;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_bi:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        SI f_call;
-
-        f_call = ((pc)+(((SI)(((EXTRACT_LSB0_SINT(insn, 32, 25, 26)) << (6))) >> (4))));
-
-        /* Record the operands */
-        ida_insn.Op1.type = o_near;
-        ida_insn.Op1.dtype = get_dtype_by_size(4);
-        ida_insn.Op1.addr = f_call;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_CALL;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_be:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        SI f_branch;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_branch = ((pc)+(((SI)(((EXTRACT_LSB0_SINT(insn, 32, 15, 16)) << (16))) >> (14))));
-
-        /* Record the operands */
-        ida_insn.Op3.type = o_near;
-        ida_insn.Op3.dtype = get_dtype_by_size(4);
-        ida_insn.Op3.addr = f_branch;
-        ida_insn.Op3.cgen_optype = LM32_OPERAND_BRANCH;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R0;
-        ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R1;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_call:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-
-        /* Record the operands */
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R0;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_calli:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        SI f_call;
-
-        f_call = ((pc)+(((SI)(((EXTRACT_LSB0_SINT(insn, 32, 25, 26)) << (6))) >> (4))));
-
-        /* Record the operands */
-        ida_insn.Op1.type = o_near;
-        ida_insn.Op1.dtype = get_dtype_by_size(4);
-        ida_insn.Op1.addr = f_call;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_CALL;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_divu:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        UINT f_r2;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_r2 = EXTRACT_LSB0_UINT(insn, 32, 15, 5);
-
-        /* Record the operands */
-        ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         ida_insn.Op3.type = o_reg;
-        ida_insn.Op3.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op3.cgen_optype = LM32_OPERAND_R1;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r2;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R2;
-
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_lb:
+decode_insn_format_addi:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        INT f_imm;
+        if ((insn & 0xffe00000) == 0x34000000) { itype = LM32_INSN_MVI; goto decode_insn_format_mvi; } // mvi             $r1,$imm
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_imm = EXTRACT_LSB0_SINT(insn, 32, 15, 16);
-
-        /* Record the operands */
-        ida_insn.Op2.type = o_displ;
-        ida_insn.Op2.dtype = get_dtype_by_size(1);
-        ida_insn.Op2.addr = f_imm;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_DISPL;
         ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_lh:
+decode_insn_format_and:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        INT f_imm;
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_imm = EXTRACT_LSB0_SINT(insn, 32, 15, 16);
-
-        /* Record the operands */
-        ida_insn.Op2.type = o_displ;
-        ida_insn.Op2.dtype = get_dtype_by_size(2);
-        ida_insn.Op2.addr = f_imm;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_DISPL;
         ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_lw:
+decode_insn_format_andi:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        INT f_imm;
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_imm = EXTRACT_LSB0_SINT(insn, 32, 15, 16);
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_UIMM;
+        ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_andhii:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
 
-        /* Record the operands */
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_HI16;
+        ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_b:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_bi:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_call = f_call(insn) << 2;
+
+        ida_insn.Op1.type = o_near;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_CALL;
+        ida_insn.Op1.addr = pc + i_call;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_be:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_branch = f_branch(insn) << 2;
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op3.type = o_near;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_BRANCH;
+        ida_insn.Op3.addr = pc + i_branch;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_bg:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_branch = f_branch(insn) << 2;
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op3.type = o_near;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_BRANCH;
+        ida_insn.Op3.addr = pc + i_branch;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_bge:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_branch = f_branch(insn) << 2;
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op3.type = o_near;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_BRANCH;
+        ida_insn.Op3.addr = pc + i_branch;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_bgeu:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_branch = f_branch(insn) << 2;
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op3.type = o_near;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_BRANCH;
+        ida_insn.Op3.addr = pc + i_branch;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_bgu:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_branch = f_branch(insn) << 2;
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op3.type = o_near;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_BRANCH;
+        ida_insn.Op3.addr = pc + i_branch;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_bne:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_branch = f_branch(insn) << 2;
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op3.type = o_near;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_BRANCH;
+        ida_insn.Op3.addr = pc + i_branch;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_call:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_calli:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_call = f_call(insn) << 2;
+
+        ida_insn.Op1.type = o_near;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_CALL;
+        ida_insn.Op1.addr = pc + i_call;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpe:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpei:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpg:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpgi:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpge:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpgei:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpgeu:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpgeui:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_UIMM;
+        ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpgu:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpgui:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_UIMM;
+        ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpne:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_cmpnei:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_divu:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_lb:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
         ida_insn.Op2.type = o_displ;
         ida_insn.Op2.dtype = get_dtype_by_size(4);
-        ida_insn.Op2.addr = f_imm;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_DISPL;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
-
+        ida_insn.Op2.addr = i_imm;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_ori:
+decode_insn_format_lbu:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        UINT f_uimm;
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_uimm = EXTRACT_LSB0_UINT(insn, 32, 15, 16);
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
 
-        /* Record the operands */
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
+        ida_insn.Op2.type = o_displ;
+        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.addr = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_lh:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
+        ida_insn.Op2.type = o_displ;
+        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.addr = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_lhu:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
+        ida_insn.Op2.type = o_displ;
+        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.addr = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_lw:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
+        ida_insn.Op2.type = o_displ;
+        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.addr = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_modu:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_mul:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_muli:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         ida_insn.Op3.type = o_imm;
         ida_insn.Op3.dtype = get_dtype_by_size(4);
-        ida_insn.Op3.value = f_uimm;
-        ida_insn.Op3.cgen_optype = LM32_OPERAND_LO16;
-        ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R1;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_nor:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
 
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_nori:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_UIMM;
+        ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_or:
+    {
+        if ((insn & 0xfc1f07ff) == 0xb8000000) { itype = LM32_INSN_MV; goto decode_insn_format_mv; } // mv              $r2,$r0
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_ori:
+    {
+        if ((insn & 0xffe00000) == 0x38000000) { itype = LM32_INSN_MVUI; goto decode_insn_format_mvui; } // mvui            $r1,$lo16
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_LO16;
+        ida_insn.Op3.value = i_uimm;
         refinfo_t ri;
         if (get_refinfo(&ri, ida_insn.ea, 2))
         {
+            ea_t target, base;
             ida_insn.Op3.type = o_mem;
-            ida_insn.Op3.addr = calc_reference_target(ida_insn.ea, ri, f_uimm);
+            calc_reference_data(&target, &base, ida_insn.ea, ri, i_uimm);
+            ida_insn.Op3.addr = target;
         }
-
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_rcsr:
+decode_insn_format_orhii:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_csr;
-        UINT f_r2;
+        if ((insn & 0xffe00000) == 0x78000000) { itype = LM32_INSN_MVHI; goto decode_insn_format_mvhi; } // mvhi            $r1,$hi16
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
 
-        f_csr = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r2 = EXTRACT_LSB0_UINT(insn, 32, 15, 5);
-
-        /* Record the operands */
-        ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_CSR_BASE + f_csr;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_CSR;
         ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r2;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R2;
-
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_HI16;
+        ida_insn.Op3.value = i_uimm;
+        refinfo_t ri;
+        if (get_refinfo(&ri, ida_insn.ea, 2))
+        {
+            ea_t target, base;
+            ida_insn.Op3.type = o_mem;
+            calc_reference_data(&target, &base, ida_insn.ea, ri, i_uimm);
+            ida_insn.Op3.addr = target;
+        }
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_sb:
+decode_insn_format_rcsr:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        INT f_imm;
+        int i_opcode = f_opcode(insn);
+        int i_csr = f_csr(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_imm = EXTRACT_LSB0_SINT(insn, 32, 15, 16);
-
-        /* Record the operands */
-        ida_insn.Op1.type = o_displ;
-        ida_insn.Op1.addr = f_imm;
-        ida_insn.Op1.dtype = get_dtype_by_size(1);
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_DISPL;
-        ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R1;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_sextb:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r2;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r2 = EXTRACT_LSB0_UINT(insn, 32, 15, 5);
-
-        /* Record the operands */
-        ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
         ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r2;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R2;
-
-        ida_insn.itype = itype;
-        ida_insn.size = 4;
-
-        return 4;
-    }
-
-extract_sfmt_sh:
-    {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        INT f_imm;
-
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_imm = EXTRACT_LSB0_SINT(insn, 32, 15, 16);
-
-        /* Record the operands */
-        ida_insn.Op1.type = o_displ;
-        ida_insn.Op1.addr = f_imm;
-        ida_insn.Op1.dtype = get_dtype_by_size(2);
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_DISPL;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
         ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R1;
-
+        ida_insn.Op2.lm32_type = LM32_OPERAND_CSR;
+        ida_insn.Op2.reg = OPVAL_H_CSR_BASE + i_csr;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_sw:
+decode_insn_format_sb:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        INT f_imm;
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_imm = EXTRACT_LSB0_SINT(insn, 32, 15, 16);
 
-        /* Record the operands */
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
         ida_insn.Op1.type = o_displ;
-        ida_insn.Op1.addr = f_imm;
         ida_insn.Op1.dtype = get_dtype_by_size(4);
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_DISPL;
+        ida_insn.Op1.addr = i_imm;
         ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R1;
-
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_user:
+decode_insn_format_sextb:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_r0;
-        UINT f_r1;
-        UINT f_r2;
-        UINT f_user;
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
 
-        f_r0 = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-        f_r2 = EXTRACT_LSB0_UINT(insn, 32, 15, 5);
-        f_user = EXTRACT_LSB0_UINT(insn, 32, 10, 11);
-
-        /* Record the operands */
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
         ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r0;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R0;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sexth:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sh:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
+        ida_insn.Op1.type = o_displ;
+        ida_insn.Op1.dtype = get_dtype_by_size(4);
+        ida_insn.Op1.addr = i_imm;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sl:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         ida_insn.Op3.type = o_reg;
-        ida_insn.Op3.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op3.cgen_optype = LM32_OPERAND_R1;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sli:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sr:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sri:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sru:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_srui:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op3.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sub:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_sw:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
+        // TODO: Please clean up the .type reg setting above....
+        ida_insn.Op1.type = o_displ;
+        ida_insn.Op1.dtype = get_dtype_by_size(4);
+        ida_insn.Op1.addr = i_imm;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_user:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_user = f_user(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
         ida_insn.Op4.type = o_imm;
         ida_insn.Op4.dtype = get_dtype_by_size(4);
-        ida_insn.Op4.value = f_user;
-        ida_insn.Op4.cgen_optype = LM32_OPERAND_USER;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_GR_BASE + f_r2;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_R2;
-
+        ida_insn.Op4.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op4.value = i_user;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_wcsr:
+decode_insn_format_wcsr:
     {
-        CGEN_INSN_WORD insn = entire_insn;
-        UINT f_csr;
-        UINT f_r1;
+        int i_opcode = f_opcode(insn);
+        int i_csr = f_csr(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
 
-        f_csr = EXTRACT_LSB0_UINT(insn, 32, 25, 5);
-        f_r1 = EXTRACT_LSB0_UINT(insn, 32, 20, 5);
-
-        /* Record the operands */
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_CSR;
+        ida_insn.Op1.reg = OPVAL_H_CSR_BASE + i_csr;
         ida_insn.Op2.type = o_reg;
-        ida_insn.Op2.reg = REGS_HW_H_GR_BASE + f_r1;
-        ida_insn.Op2.cgen_optype = LM32_OPERAND_R1;
-        ida_insn.Op1.type = o_reg;
-        ida_insn.Op1.reg = REGS_HW_H_CSR_BASE + f_csr;
-        ida_insn.Op1.cgen_optype = LM32_OPERAND_CSR;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r1;
         ida_insn.itype = itype;
         ida_insn.size = 4;
-
         return 4;
     }
-
-extract_sfmt_break:
+decode_insn_format_xor:
     {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
         ida_insn.itype = itype;
         ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_xori:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
 
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_UIMM;
+        ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_xnor:
+    {
+        if ((insn & 0xfc1f07ff) == 0xa4000000) { itype = LM32_INSN_NOT; goto decode_insn_format_not; } // not             $r2,$r0
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_xnori:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_imm;
+        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.lm32_type = LM32_OPERAND_UIMM;
+        ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_break:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_exception = f_exception(insn);
+
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_scall:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_exception = f_exception(insn);
+
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_bret:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_eret:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_ret:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_mv:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_mvi:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_imm;
+        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op2.value = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_mvui:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_imm;
+        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.lm32_type = LM32_OPERAND_LO16;
+        ida_insn.Op2.value = i_uimm;
+        refinfo_t ri;
+        if (get_refinfo(&ri, ida_insn.ea, 2))
+        {
+            ea_t target, base;
+            ida_insn.Op2.type = o_mem;
+            calc_reference_data(&target, &base, ida_insn.ea, ri, i_uimm);
+            ida_insn.Op2.addr = target;
+        }
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_mvhi:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_uimm = f_uimm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.Op2.type = o_imm;
+        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.lm32_type = LM32_OPERAND_HI16;
+        ida_insn.Op2.value = i_uimm;
+        refinfo_t ri;
+        if (get_refinfo(&ri, ida_insn.ea, 2))
+        {
+            ea_t target, base;
+            ida_insn.Op2.type = o_mem;
+            calc_reference_data(&target, &base, ida_insn.ea, ri, i_uimm);
+            ida_insn.Op2.addr = target;
+        }
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_mva:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r1;
+
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_not:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_nop:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_imm = f_imm(insn);
+
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
         return 4;
     }
 }

@@ -19,16 +19,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\bfd_stdint.h" />
-    <ClInclude Include="..\cgen.h" />
-    <ClInclude Include="..\cgen\basic-modes.h" />
-    <ClInclude Include="..\cgen\basic-ops.h" />
-    <ClInclude Include="..\cgen\bitset.h" />
-    <ClInclude Include="..\cgen\engine.h" />
     <ClInclude Include="..\ins.hpp" />
     <ClInclude Include="..\lm32.hpp" />
-    <ClInclude Include="..\reg.hpp" />
-    <ClInclude Include="..\symcat.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\ana.cpp" />
