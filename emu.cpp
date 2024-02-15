@@ -190,6 +190,14 @@ bool LM32_t::LM32_is_switch(switch_info_t* si, const insn_t& insn) {
     return false;
 
 }
+static ea_t val_from_op(const op_t& op)
+{
+    if (op.type == o_imm)
+        return op.value;
+    if (op.type == o_mem)
+        return op.addr;
+    return BADADDR;
+}
 static bool spoils(const insn_t& insn, int reg)
 {
     // instruction indirectly changes reg
@@ -208,7 +216,7 @@ static bool spoils(const insn_t& insn, int reg)
     {
         if ((insn.Op1.type == o_reg && insn.Op1.reg == reg) &&
             (insn.Op2.type == o_reg && insn.Op2.reg == reg) &&
-            insn.Op3.value == 0)
+            val_from_op(insn.Op3)==0)
         {
             return false;
         }
@@ -255,7 +263,7 @@ static void hi_lo_pairs(const insn_t& insn)
                 if (reg_with_hi == prev.Op1.reg)
                 {
                     found = true;
-                    target = (prev.Op2.value << 0x10) | insn.Op3.value | ori_val;
+                    target = (val_from_op(prev.Op2) << 0x10) | val_from_op(insn.Op3) | ori_val;
                     op_offset(insn.ea, 0x2, REF_LOW16, target);
                     if (target <= 0x40000)
                     {
@@ -273,10 +281,7 @@ static void hi_lo_pairs(const insn_t& insn)
                 if ((prev.Op1.type == o_reg && prev.Op1.reg == reg_with_hi) &&
                     (prev.Op2.type == o_reg && prev.Op2.reg == reg_with_hi) )
                 {
-                    if (prev.Op3.type == o_imm)
-                        ori_val |= prev.Op3.value;
-                    else if (prev.Op3.type == o_mem)
-                        ori_val |= prev.Op3.addr;
+                    ori_val |= val_from_op(insn.Op3);
                 }
             }
             else if (prev.itype == LM32_INSN_MV)
@@ -308,7 +313,7 @@ static void hi_lo_pairs(const insn_t& insn)
                 if (reg_with_hi == prev.Op1.reg)
                 {
                     found = true;
-                    target = prev.Op2.value | (insn.Op3.value << 0x10);
+                    target = val_from_op(prev.Op2) | val_from_op(insn.Op3) << 0x10;
                     op_offset(insn.ea, 0x2, REF_HIGH16, target);
                     if (target <= 0x40000)
                     {
