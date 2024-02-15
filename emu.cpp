@@ -175,7 +175,7 @@ bool LM32_t::LM32_is_switch(switch_info_t* si, const insn_t& insn) {
         {
         
             si->set_jtable_element_size(4);  // 4 bytes for 32-bit pointers in the table on LM32
-            si->set_jtable_size(num_entries);
+            si->set_jtable_size((int)num_entries);
             si->startea = insn.ea;
             si->jumps = jump_table_addr;
             si->set_shift(0);  // No shift operation on the index
@@ -190,25 +190,80 @@ bool LM32_t::LM32_is_switch(switch_info_t* si, const insn_t& insn) {
     return false;
 
 }
+static ea_t val_from_op(const op_t& op)
+{
+    if (op.type == o_imm)
+        return op.value;
+    if (op.type == o_mem)
+        return op.addr;
+    return BADADDR;
+}
+static bool spoils(const insn_t& insn, int reg)
+{
+    // instruction indirectly changes reg
+    switch (insn.itype)
+    {
+        case LM32_INSN_CALL:
+        case LM32_INSN_CALLI:
+            if( reg >= 1 && reg <= 10 )// r1-r10
+                return true;
+            if (reg == 29)//ra
+            break;
+    }
+    
+    // ORing reg with 0 doesnt affect it
+    if (insn.itype == LM32_INSN_ORI)
+    {
+        if ((insn.Op1.type == o_reg && insn.Op1.reg == reg) &&
+            (insn.Op2.type == o_reg && insn.Op2.reg == reg) &&
+            val_from_op(insn.Op3)==0)
+        {
+            return false;
+        }
+    }
+
+    // instruction directly changes reg
+    uint32 features = insn.get_canon_feature(ph);
+    const uint32_t max_ops = 3;
+    for (uint32 i = 0; i < max_ops; i++)
+    {
+        if ( has_cf_chg(features, i) )
+        {
+            const op_t& x = insn.ops[i];
+            if (x.type == o_reg && x.reg == reg)
+                return true;
+        }
+    }
+
+    return false;
+}
 static void hi_lo_pairs(const insn_t& insn)
 {
     ea_t target = BADADDR;
     bool found = false;
     insn_t prev;
     ea_t prev_ea;
-    unsigned short use_reg = 0xFFFF;
+    ea_t min_ea = insn.ea - 0x10 * 4;
+    if (min_ea > insn.ea)
+        min_ea = 0;
+    func_t* pfn = get_func(insn.ea);
+    if (pfn)
+        min_ea = pfn->start_ea;
+    
     // Look for MVHI and ORI pairs
-    prev_ea = decode_prev_insn(&prev, insn.ea);
     if (insn.itype == LM32_INSN_ORI)
     {
-        for (int i = 0; i < 0x10; i++)
+        uint32 ori_val = 0;
+        int reg_with_hi = insn.Op2.reg;
+        prev_ea = decode_prev_insn(&prev, insn.ea);
+        while(prev_ea != BADADDR && prev_ea >= min_ea )
         {
             if (prev.itype == LM32_INSN_MVHI)
             {
-                if (insn.Op2.reg == prev.Op1.reg)
+                if (reg_with_hi == prev.Op1.reg)
                 {
                     found = true;
-                    target = (prev.Op2.value << 0x10) | insn.Op3.value;
+                    target = (val_from_op(prev.Op2) << 0x10) | val_from_op(insn.Op3) | ori_val;
                     op_offset(insn.ea, 0x2, REF_LOW16, target);
                     if (target <= 0x40000)
                     {
@@ -221,22 +276,44 @@ static void hi_lo_pairs(const insn_t& insn)
                     }
                 }
             }
+            else if (prev.itype == LM32_INSN_ORI)
+            {
+                if ((prev.Op1.type == o_reg && prev.Op1.reg == reg_with_hi) &&
+                    (prev.Op2.type == o_reg && prev.Op2.reg == reg_with_hi) )
+                {
+                    ori_val |= val_from_op(insn.Op3);
+                }
+            }
+            else if (prev.itype == LM32_INSN_MV)
+            {
+                if (reg_with_hi == prev.Op1.reg)
+                {
+                    reg_with_hi = prev.Op2.reg;
+                }
+            }
+            else
+            {
+                if (spoils(prev, reg_with_hi))
+                    break;
+            }
             if (found) break;
             else prev_ea = decode_prev_insn(&prev, prev_ea);
         }
     }
+    
     // Look for MVUI and ORHII pairs
-    prev_ea = decode_prev_insn(&prev, insn.ea);
     if (insn.itype == LM32_INSN_ORHII)
     {
-        for (int i = 0; i < 0x10; i++)
+        int reg_with_hi = insn.Op2.reg;
+        prev_ea = decode_prev_insn(&prev, insn.ea);
+        while (prev_ea != BADADDR && prev_ea >= min_ea)
         {
             if (prev.itype == LM32_INSN_MVUI)
             {
-                if (insn.Op2.reg == prev.Op1.reg)
+                if (reg_with_hi == prev.Op1.reg)
                 {
                     found = true;
-                    target = prev.Op2.value | (insn.Op3.value << 0x10);
+                    target = val_from_op(prev.Op2) | val_from_op(insn.Op3) << 0x10;
                     op_offset(insn.ea, 0x2, REF_HIGH16, target);
                     if (target <= 0x40000)
                     {
@@ -248,6 +325,18 @@ static void hi_lo_pairs(const insn_t& insn)
                         set_cmt(insn.ea, comment, false);
                     }
                 }
+            }
+            else if (prev.itype == LM32_INSN_MV)
+            {
+                if (reg_with_hi == prev.Op1.reg)
+                {
+                    reg_with_hi = prev.Op2.reg;
+                }
+            }
+            else
+            {
+                if (spoils(prev, reg_with_hi))
+                    break;
             }
             if (found) break;
             else prev_ea = decode_prev_insn(&prev, prev_ea);
