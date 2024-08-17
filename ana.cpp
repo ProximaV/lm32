@@ -256,7 +256,7 @@ decode_insn_format_b:
 decode_insn_format_bi:
     {
         int i_opcode = f_opcode(insn);
-        int i_call = f_call(insn) << 2;
+        ea_t i_call = f_call(insn) << 2;
 
         ida_insn.Op1.type = o_near;
         ida_insn.Op1.lm32_type = LM32_OPERAND_CALL;
@@ -270,7 +270,7 @@ decode_insn_format_be:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_branch = f_branch(insn) << 2;
+        ea_t i_branch = f_branch(insn) << 2;
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -290,7 +290,7 @@ decode_insn_format_bg:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_branch = f_branch(insn) << 2;
+        ea_t i_branch = f_branch(insn) << 2;
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -310,7 +310,7 @@ decode_insn_format_bge:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_branch = f_branch(insn) << 2;
+        ea_t i_branch = f_branch(insn) << 2;
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -330,7 +330,7 @@ decode_insn_format_bgeu:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_branch = f_branch(insn) << 2;
+        ea_t i_branch = f_branch(insn) << 2;
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -350,7 +350,7 @@ decode_insn_format_bgu:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_branch = f_branch(insn) << 2;
+        ea_t i_branch = f_branch(insn) << 2;
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -370,7 +370,7 @@ decode_insn_format_bne:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_branch = f_branch(insn) << 2;
+        ea_t i_branch = f_branch(insn) << 2;
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -403,7 +403,7 @@ decode_insn_format_call:
 decode_insn_format_calli:
     {
         int i_opcode = f_opcode(insn);
-        int i_call = f_call(insn) << 2;
+        ea_t i_call = f_call(insn) << 2;
 
         ida_insn.Op1.type = o_near;
         ida_insn.Op1.lm32_type = LM32_OPERAND_CALL;
@@ -690,7 +690,7 @@ decode_insn_format_lb:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -711,7 +711,7 @@ decode_insn_format_lbu:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -732,7 +732,7 @@ decode_insn_format_lh:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -753,7 +753,7 @@ decode_insn_format_lhu:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -774,7 +774,7 @@ decode_insn_format_lw:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -1000,7 +1000,7 @@ decode_insn_format_sb:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
 
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -1057,7 +1057,7 @@ decode_insn_format_sh:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
 
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;
@@ -1225,7 +1225,7 @@ decode_insn_format_sw:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        ea_t i_imm = f_imm(insn);
 
 
         ida_insn.Op1.lm32_type = LM32_OPERAND_R0;

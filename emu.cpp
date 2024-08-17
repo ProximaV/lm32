@@ -223,7 +223,7 @@ static bool spoils(const insn_t& insn, int reg)
     }
 
     // instruction directly changes reg
-    uint32 features = insn.get_canon_feature(ph);
+    uint32 features = insn.get_canon_feature(PH);
     const uint32_t max_ops = 3;
     for (uint32 i = 0; i < max_ops; i++)
     {
