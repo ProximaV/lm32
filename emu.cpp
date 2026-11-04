@@ -27,11 +27,82 @@ static void add_sp(const insn_t& insn, sval_t delta)
 
     if (may_trace_sp() && pfn)
     {
-        //if(delta <0)
-        // This is to fix the arg_0 reference for sp+0
-        add_auto_stkpnt(pfn, insn.ea + insn.size, delta - 4);
-        //else add_auto_stkpnt(pfn, insn.ea + insn.size, delta);
+        add_auto_stkpnt(pfn, insn.ea + insn.size, delta);
     }
+}
+
+int idaapi LM32_t::is_sp_based(const insn_t& insn, const op_t& x)
+{
+    int flag = OP_FP_BASED;
+    if (x.type == o_displ && (x.reg == OPVAL_HW_H_SP || x.reg == OPVAL_HW_H_FP))
+    {
+        flag = (x.reg == OPVAL_HW_H_SP) ? OP_SP_BASED : OP_FP_BASED;
+    }
+    else if (x.type == o_imm && x.n == 2 && insn.itype == LM32_INSN_ADDI)
+    {
+        if (insn.Op2.reg == OPVAL_HW_H_SP)
+            flag = OP_SP_BASED;
+        else if (insn.Op2.reg == OPVAL_HW_H_FP)
+            flag = OP_FP_BASED;
+    }
+    return OP_SP_ADD | flag;
+}
+
+bool idaapi LM32_t::create_func_frame(ea_t func_ea)
+{
+    if (func_ea == BADADDR)
+        return false;
+
+    func_entry_info_t fi;
+    if (!get_func_entry_info(&fi, func_ea))
+        return false;
+
+    ea_t ea = func_ea;
+    insn_t insn;
+    sval_t frsize = 0;
+    ushort regsize = 0;
+    bool uses_fp = false;
+
+    for (int i = 0; i < 16 && ea < fi.end_ea; i++)
+    {
+        if (!decode_insn(&insn, ea))
+            break;
+
+        if (insn.itype == LM32_INSN_ADDI
+            && insn.Op1.reg == OPVAL_HW_H_SP
+            && insn.Op2.reg == OPVAL_HW_H_SP
+            && (int32)insn.Op3.value < 0)
+        {
+            frsize += -(int32)insn.Op3.value;
+        }
+        else if (insn.itype == LM32_INSN_SW
+            && insn.Op1.reg == OPVAL_HW_H_SP)
+        {
+            regsize += 4;
+        }
+        else if (insn.itype == LM32_INSN_MV
+            && insn.Op1.reg == OPVAL_HW_H_FP
+            && insn.Op2.reg == OPVAL_HW_H_SP)
+        {
+            uses_fp = true;
+        }
+
+        uint32 feature = insn.get_canon_feature(PH);
+        if ((feature & (CF_STOP | CF_CALL | CF_JUMP)) != 0)
+            break;
+
+        ea += insn.size;
+    }
+
+    if (frsize <= 0)
+        return false;
+
+    if (regsize > frsize)
+        regsize = 0;
+
+    uint64 flags = FUNC_FRAME | (uses_fp ? FUNC_BOTTOMBP : 0);
+    set_func_flag(func_ea, flags);
+    return add_frame_ea(func_ea, frsize - regsize, regsize, 0);
 }
 /*
 *  Example Switch from lm32 module
@@ -207,7 +278,8 @@ static bool spoils(const insn_t& insn, int reg)
         case LM32_INSN_CALLI:
             if( reg >= 1 && reg <= 10 )// r1-r10
                 return true;
-            if (reg == 29)//ra
+            if (reg == OPVAL_HW_H_RA)//ra (29)
+                return true;
             break;
     }
     
@@ -224,7 +296,7 @@ static bool spoils(const insn_t& insn, int reg)
 
     // instruction directly changes reg
     uint32 features = insn.get_canon_feature(PH);
-    const uint32_t max_ops = 3;
+    const uint32_t max_ops = 4;
     for (uint32 i = 0; i < max_ops; i++)
     {
         if ( has_cf_chg(features, i) )
@@ -265,11 +337,11 @@ static void hi_lo_pairs(const insn_t& insn)
                     found = true;
                     target = (val_from_op(prev.Op2) << 0x10) | val_from_op(insn.Op3) | ori_val;
                     op_offset(insn.ea, 0x2, REF_LOW16, target);
-                    if (target <= 0x40000)
+                    if (is_mapped(target) || getseg(target) != nullptr)
                     {
                         insn.add_dref(target, insn.ea, dr_O);
                     }
-                    else if (target >= 0x40000) {
+                    else {
                         char comment[MAXSTR];
                         qsnprintf(comment, sizeof comment, "0x%08X", target);
                         set_cmt(insn.ea, comment, false);
@@ -315,11 +387,11 @@ static void hi_lo_pairs(const insn_t& insn)
                     found = true;
                     target = val_from_op(prev.Op2) | val_from_op(insn.Op3) << 0x10;
                     op_offset(insn.ea, 0x2, REF_HIGH16, target);
-                    if (target <= 0x40000)
+                    if (is_mapped(target) || getseg(target) != nullptr)
                     {
                         insn.add_dref(target, insn.ea, dr_O);
                     }
-                    else if (target >= 0x40000) {
+                    else {
                         char comment[MAXSTR];
                         qsnprintf(comment, sizeof comment, "0x%08X", target);
                         set_cmt(insn.ea, comment, false);
@@ -363,7 +435,7 @@ static int LM32_emu_addi(const insn_t& insn)
 {
     if (insn.Op1.reg == OPVAL_HW_H_SP && insn.Op2.reg == OPVAL_HW_H_SP)
         add_sp(insn, (sval_t)insn.Op3.value);
-    if (insn.Op1.reg != OPVAL_HW_H_SP && insn.Op2.reg == OPVAL_HW_H_SP)
+    if (insn.Op1.reg != OPVAL_HW_H_SP && (insn.Op2.reg == OPVAL_HW_H_SP || insn.Op2.reg == OPVAL_HW_H_FP))
         make_stack_var(insn, insn.Op3);
 
     return 4;
@@ -425,7 +497,7 @@ static int LM32_emu_calli(const insn_t& insn)
 
 static int LM32_emu_load(const insn_t& insn)
 {
-    if (insn.Op2.reg == OPVAL_HW_H_SP)
+    if (insn.Op2.reg == OPVAL_HW_H_SP || insn.Op2.reg == OPVAL_HW_H_FP)
         make_stack_var(insn, insn.Op2);
     return 4;
 }
@@ -433,7 +505,7 @@ static int LM32_emu_load(const insn_t& insn)
 
 static int LM32_emu_store(const insn_t& insn)
 {
-    if (insn.Op1.reg == OPVAL_HW_H_SP)
+    if (insn.Op1.reg == OPVAL_HW_H_SP || insn.Op1.reg == OPVAL_HW_H_FP)
         make_stack_var(insn, insn.Op1);
     return 4;
 }
@@ -464,7 +536,9 @@ int LM32_t::LM32_emu(const insn_t& insn)
     case LM32_INSN_CMPGUI:
     case LM32_INSN_CMPNE:
     case LM32_INSN_CMPNEI:
+    case LM32_INSN_DIV:
     case LM32_INSN_DIVU:
+    case LM32_INSN_MOD:
     case LM32_INSN_MODU:
     case LM32_INSN_MUL:
     case LM32_INSN_MULI:
@@ -489,6 +563,7 @@ int LM32_t::LM32_emu(const insn_t& insn)
     case LM32_INSN_XORI:
     case LM32_INSN_XNOR:
     case LM32_INSN_XNORI:
+    case LM32_INSN_RAISE:
     case LM32_INSN_BREAK:
     case LM32_INSN_SCALL:
     case LM32_INSN_BRET:

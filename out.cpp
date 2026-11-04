@@ -18,23 +18,19 @@ DECLARE_OUT_FUNCS_WITHOUT_OUTMNEM(out_LM32_t);
 
 void out_LM32_t::out_print_address(const op_t& x, ea_t pc, int n)
 {
-    const char* prefix;
-
+    const char* prefix = NULL;
     refinfo_t ri;
-    if (get_refinfo(&ri, pc, n))
+    bool has_ri = get_refinfo(&ri, pc, n);
+    if (has_ri)
     {
         switch (ri.type())
         {
-        case REF_LOW8: prefix = "low8"; break;
-        case REF_LOW16: prefix = "low16"; break;
-        case REF_HIGH8: prefix = "high8"; break;
+        case REF_LOW8:   prefix = "low8"; break;
+        case REF_LOW16:  prefix = "low16"; break;
+        case REF_HIGH8:  prefix = "high8"; break;
         case REF_HIGH16: prefix = "high16"; break;
         default: prefix = NULL; break;
         }
-    }
-    else
-    {
-        prefix = NULL;
     }
 
     if (prefix)
@@ -42,7 +38,16 @@ void out_LM32_t::out_print_address(const op_t& x, ea_t pc, int n)
         out_line(prefix, COLOR_MACRO);
         out_line("(", COLOR_MACRO);
     }
-    if (!out_name_expr(x, x.addr))
+
+    ea_t target_ea;
+    if (has_ri && ri.target != BADADDR)
+        target_ea = ri.target;
+    else if (x.type == o_mem)
+        target_ea = x.addr;
+    else
+        target_ea = (ea_t)x.value;
+
+    if (!out_name_expr(x, target_ea))
     {
         out_tagon(COLOR_ERROR);
         out_value(x, OOF_ADDR | OOFW_32 | OOF_NUMBER | OOFS_NOSIGN);
@@ -78,12 +83,20 @@ bool out_LM32_t::out_operand(const op_t& x)
             out_symbol('?');
         break;
     case LM32_OPERAND_IMM:
-        if (x.type == o_imm)
-            out_value(x, OOF_SIGNED | OOF_NUMBER | OOFW_IMM);
-        else if (x.type == o_mem)
-            out_print_address(x, pc, x.n);
-        else
-            out_symbol('?');
+        {
+            refinfo_t ri;
+            if (get_refinfo(&ri, pc, x.n) || is_off(get_flags(pc), x.n))
+            {
+                out_print_address(x, pc, x.n);
+                break;
+            }
+            if (x.type == o_imm)
+                out_value(x, OOF_SIGNED | OOF_NUMBER | OOFW_IMM);
+            else if (x.type == o_mem)
+                out_print_address(x, pc, x.n);
+            else
+                out_symbol('?');
+        }
         break;
     case LM32_OPERAND_CALL:
     case LM32_OPERAND_BRANCH:
@@ -133,7 +146,9 @@ void out_LM32_t::out_insn(void)
     case LM32_INSN_CMPGUI:
     case LM32_INSN_CMPNE:
     case LM32_INSN_CMPNEI:
+    case LM32_INSN_DIV:
     case LM32_INSN_DIVU:
+    case LM32_INSN_MOD:
     case LM32_INSN_MODU:
     case LM32_INSN_MUL:
     case LM32_INSN_MULI:
@@ -167,6 +182,7 @@ void out_LM32_t::out_insn(void)
     case LM32_INSN_BI:
     case LM32_INSN_CALL:
     case LM32_INSN_CALLI:
+    case LM32_INSN_RAISE:
         out_mnem();
         out_one_operand(0);
         break;

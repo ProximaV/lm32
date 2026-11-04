@@ -55,75 +55,96 @@ int LM32_t::LM32_ana(insn_t* _insn)
 
     insn = get_dword(ida_insn.ea);
     pc = ida_insn.ea;
-    // Pseudo Instruction
-    if ((insn & 0xffffffff) == 0xc3e00000) { itype = LM32_INSN_BRET; goto decode_insn_format_bret; } // bret           
-    if ((insn & 0xffffffff) == 0xc3c00000) { itype = LM32_INSN_ERET; goto decode_insn_format_eret; } // eret           
-    if ((insn & 0xffffffff) == 0xc3a00000) { itype = LM32_INSN_RET; goto decode_insn_format_ret; } // ret            
-    if ((insn & 0xffffffff) == 0x34000000) { itype = LM32_INSN_NOP; goto decode_insn_format_nop; } // nop            
-    // Standard Instruction
-    if ((insn & 0xfc0007ff) == 0xb4000000) { itype = LM32_INSN_ADD; goto decode_insn_format_add; } // add             $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x34000000) { itype = LM32_INSN_ADDI; goto decode_insn_format_addi; } // addi            $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0xa0000000) { itype = LM32_INSN_AND; goto decode_insn_format_and; } // and             $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x20000000) { itype = LM32_INSN_ANDI; goto decode_insn_format_andi; } // andi            $r1,$r0,$uimm
-    if ((insn & 0xfc000000) == 0x60000000) { itype = LM32_INSN_ANDHII; goto decode_insn_format_andhii; } // andhii          $r1,$r0,$hi16
-    if ((insn & 0xfc1fffff) == 0xc0000000) { itype = LM32_INSN_B; goto decode_insn_format_b; } // b               $r0
-    if ((insn & 0xfc000000) == 0xe0000000) { itype = LM32_INSN_BI; goto decode_insn_format_bi; } // bi              $call
-    if ((insn & 0xfc000000) == 0x44000000) { itype = LM32_INSN_BE; goto decode_insn_format_be; } // be              $r0,$r1,$branch
-    if ((insn & 0xfc000000) == 0x48000000) { itype = LM32_INSN_BG; goto decode_insn_format_bg; } // bg              $r0,$r1,$branch
-    if ((insn & 0xfc000000) == 0x4c000000) { itype = LM32_INSN_BGE; goto decode_insn_format_bge; } // bge             $r0,$r1,$branch
-    if ((insn & 0xfc000000) == 0x50000000) { itype = LM32_INSN_BGEU; goto decode_insn_format_bgeu; } // bgeu            $r0,$r1,$branch
-    if ((insn & 0xfc000000) == 0x54000000) { itype = LM32_INSN_BGU; goto decode_insn_format_bgu; } // bgu             $r0,$r1,$branch
-    if ((insn & 0xfc000000) == 0x5c000000) { itype = LM32_INSN_BNE; goto decode_insn_format_bne; } // bne             $r0,$r1,$branch
-    if ((insn & 0xfc1fffff) == 0xd8000000) { itype = LM32_INSN_CALL; goto decode_insn_format_call; } // call            $r0
-    if ((insn & 0xfc000000) == 0xf8000000) { itype = LM32_INSN_CALLI; goto decode_insn_format_calli; } // calli           $call
-    if ((insn & 0xfc0007ff) == 0xe4000000) { itype = LM32_INSN_CMPE; goto decode_insn_format_cmpe; } // cmpe            $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x64000000) { itype = LM32_INSN_CMPEI; goto decode_insn_format_cmpei; } // cmpei           $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0xe8000000) { itype = LM32_INSN_CMPG; goto decode_insn_format_cmpg; } // cmpg            $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x68000000) { itype = LM32_INSN_CMPGI; goto decode_insn_format_cmpgi; } // cmpgi           $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0xec000000) { itype = LM32_INSN_CMPGE; goto decode_insn_format_cmpge; } // cmpge           $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x6c000000) { itype = LM32_INSN_CMPGEI; goto decode_insn_format_cmpgei; } // cmpgei          $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0xf0000000) { itype = LM32_INSN_CMPGEU; goto decode_insn_format_cmpgeu; } // cmpgeu          $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x70000000) { itype = LM32_INSN_CMPGEUI; goto decode_insn_format_cmpgeui; } // cmpgeui         $r1,$r0,$uimm
-    if ((insn & 0xfc0007ff) == 0xf4000000) { itype = LM32_INSN_CMPGU; goto decode_insn_format_cmpgu; } // cmpgu           $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x74000000) { itype = LM32_INSN_CMPGUI; goto decode_insn_format_cmpgui; } // cmpgui          $r1,$r0,$uimm
-    if ((insn & 0xfc0007ff) == 0xfc000000) { itype = LM32_INSN_CMPNE; goto decode_insn_format_cmpne; } // cmpne           $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x7c000000) { itype = LM32_INSN_CMPNEI; goto decode_insn_format_cmpnei; } // cmpnei          $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0x8c000000) { itype = LM32_INSN_DIVU; goto decode_insn_format_divu; } // divu            $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x10000000) { itype = LM32_INSN_LB; goto decode_insn_format_lb; } // lb              $r1,($r0+$imm)
-    if ((insn & 0xfc000000) == 0x40000000) { itype = LM32_INSN_LBU; goto decode_insn_format_lbu; } // lbu             $r1,($r0+$imm)
-    if ((insn & 0xfc000000) == 0x1c000000) { itype = LM32_INSN_LH; goto decode_insn_format_lh; } // lh              $r1,($r0+$imm)
-    if ((insn & 0xfc000000) == 0x2c000000) { itype = LM32_INSN_LHU; goto decode_insn_format_lhu; } // lhu             $r1,($r0+$imm)
-    if ((insn & 0xfc000000) == 0x28000000) { itype = LM32_INSN_LW; goto decode_insn_format_lw; } // lw              $r1,($r0+$imm)
-    if ((insn & 0xfc0007ff) == 0xc4000000) { itype = LM32_INSN_MODU; goto decode_insn_format_modu; } // modu            $r2,$r0,$r1
-    if ((insn & 0xfc0007ff) == 0x88000000) { itype = LM32_INSN_MUL; goto decode_insn_format_mul; } // mul             $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x08000000) { itype = LM32_INSN_MULI; goto decode_insn_format_muli; } // muli            $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0x84000000) { itype = LM32_INSN_NOR; goto decode_insn_format_nor; } // nor             $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x04000000) { itype = LM32_INSN_NORI; goto decode_insn_format_nori; } // nori            $r1,$r0,$uimm
-    if ((insn & 0xfc0007ff) == 0xb8000000) { itype = LM32_INSN_OR; goto decode_insn_format_or; } // or              $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x38000000) { itype = LM32_INSN_ORI; goto decode_insn_format_ori; } // ori             $r1,$r0,$lo16
-    if ((insn & 0xfc000000) == 0x78000000) { itype = LM32_INSN_ORHII; goto decode_insn_format_orhii; } // orhii           $r1,$r0,$hi16
-    if ((insn & 0xfc1f07ff) == 0x90000000) { itype = LM32_INSN_RCSR; goto decode_insn_format_rcsr; } // rcsr            $r2,$csr
-    if ((insn & 0xfc000000) == 0x30000000) { itype = LM32_INSN_SB; goto decode_insn_format_sb; } // sb              ($r0+$imm),$r1
-    if ((insn & 0xfc1f07ff) == 0xb0000000) { itype = LM32_INSN_SEXTB; goto decode_insn_format_sextb; } // sextb           $r2,$r0
-    if ((insn & 0xfc1f07ff) == 0xdc000000) { itype = LM32_INSN_SEXTH; goto decode_insn_format_sexth; } // sexth           $r2,$r0
-    if ((insn & 0xfc000000) == 0x0c000000) { itype = LM32_INSN_SH; goto decode_insn_format_sh; } // sh              ($r0+$imm),$r1
-    if ((insn & 0xfc0007ff) == 0xbc000000) { itype = LM32_INSN_SL; goto decode_insn_format_sl; } // sl              $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x3c000000) { itype = LM32_INSN_SLI; goto decode_insn_format_sli; } // sli             $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0x94000000) { itype = LM32_INSN_SR; goto decode_insn_format_sr; } // sr              $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x14000000) { itype = LM32_INSN_SRI; goto decode_insn_format_sri; } // sri             $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0x80000000) { itype = LM32_INSN_SRU; goto decode_insn_format_sru; } // sru             $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x00000000) { itype = LM32_INSN_SRUI; goto decode_insn_format_srui; } // srui            $r1,$r0,$imm
-    if ((insn & 0xfc0007ff) == 0xc8000000) { itype = LM32_INSN_SUB; goto decode_insn_format_sub; } // sub             $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x58000000) { itype = LM32_INSN_SW; goto decode_insn_format_sw; } // sw              ($r0+$imm),$r1
-    if ((insn & 0xfc000000) == 0xcc000000) { itype = LM32_INSN_USER; goto decode_insn_format_user; } // user            $r2,$r0,$r1,$user
-    if ((insn & 0xfc00ffff) == 0xd0000000) { itype = LM32_INSN_WCSR; goto decode_insn_format_wcsr; } // wcsr            $csr,$r1
-    if ((insn & 0xfc0007ff) == 0x98000000) { itype = LM32_INSN_XOR; goto decode_insn_format_xor; } // xor             $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x18000000) { itype = LM32_INSN_XORI; goto decode_insn_format_xori; } // xori            $r1,$r0,$uimm
-    if ((insn & 0xfc0007ff) == 0xa4000000) { itype = LM32_INSN_XNOR; goto decode_insn_format_xnor; } // xnor            $r2,$r0,$r1
-    if ((insn & 0xfc000000) == 0x24000000) { itype = LM32_INSN_XNORI; goto decode_insn_format_xnori; } // xnori           $r1,$r0,$uimm
-    if ((insn & 0xffffffff) == 0xac000002) { itype = LM32_INSN_BREAK; goto decode_insn_format_break; } // break          
-    if ((insn & 0xffffffff) == 0xac000007) { itype = LM32_INSN_SCALL; goto decode_insn_format_scall; } // scall          
-    else { itype = LM32_INSN_X_INVALID; goto decode_insn_format_empty; }
+
+    // Decode by 6-bit primary opcode
+    int opcode = f_opcode(insn);
+    switch (opcode)
+    {
+    case 0x00: itype = LM32_INSN_SRUI;   goto decode_insn_format_srui;
+    case 0x01: itype = LM32_INSN_NORI;   goto decode_insn_format_nori;
+    case 0x02: itype = LM32_INSN_MULI;   goto decode_insn_format_muli;
+    case 0x03: itype = LM32_INSN_SH;     goto decode_insn_format_sh;
+    case 0x04: itype = LM32_INSN_LB;     goto decode_insn_format_lb;
+    case 0x05: itype = LM32_INSN_SRI;    goto decode_insn_format_sri;
+    case 0x06: itype = LM32_INSN_XORI;   goto decode_insn_format_xori;
+    case 0x07: itype = LM32_INSN_LH;     goto decode_insn_format_lh;
+    case 0x08: itype = LM32_INSN_ANDI;   goto decode_insn_format_andi;
+    case 0x09: itype = LM32_INSN_XNORI;  goto decode_insn_format_xnori;
+    case 0x0A: itype = LM32_INSN_LW;     goto decode_insn_format_lw;
+    case 0x0B: itype = LM32_INSN_LHU;    goto decode_insn_format_lhu;
+    case 0x0C: itype = LM32_INSN_SB;     goto decode_insn_format_sb;
+    case 0x0D:
+        if (insn == 0x34000000) { itype = LM32_INSN_NOP; goto decode_insn_format_nop; }
+        itype = LM32_INSN_ADDI;
+        goto decode_insn_format_addi;
+    case 0x0E: itype = LM32_INSN_ORI;    goto decode_insn_format_ori;
+    case 0x0F: itype = LM32_INSN_SLI;    goto decode_insn_format_sli;
+    case 0x10: itype = LM32_INSN_LBU;    goto decode_insn_format_lbu;
+    case 0x11: itype = LM32_INSN_BE;     goto decode_insn_format_be;
+    case 0x12: itype = LM32_INSN_BG;     goto decode_insn_format_bg;
+    case 0x13: itype = LM32_INSN_BGE;    goto decode_insn_format_bge;
+    case 0x14: itype = LM32_INSN_BGEU;   goto decode_insn_format_bgeu;
+    case 0x15: itype = LM32_INSN_BGU;    goto decode_insn_format_bgu;
+    case 0x16: itype = LM32_INSN_SW;     goto decode_insn_format_sw;
+    case 0x17: itype = LM32_INSN_BNE;    goto decode_insn_format_bne;
+    case 0x18: itype = LM32_INSN_ANDHII; goto decode_insn_format_andhii;
+    case 0x19: itype = LM32_INSN_CMPEI;  goto decode_insn_format_cmpei;
+    case 0x1A: itype = LM32_INSN_CMPGI;  goto decode_insn_format_cmpgi;
+    case 0x1B: itype = LM32_INSN_CMPGEI; goto decode_insn_format_cmpgei;
+    case 0x1C: itype = LM32_INSN_CMPGEUI; goto decode_insn_format_cmpgeui;
+    case 0x1D: itype = LM32_INSN_CMPGUI; goto decode_insn_format_cmpgui;
+    case 0x1E: itype = LM32_INSN_ORHII;  goto decode_insn_format_orhii;
+    case 0x1F: itype = LM32_INSN_CMPNEI; goto decode_insn_format_cmpnei;
+    case 0x20: itype = LM32_INSN_SRU;    goto decode_insn_format_sru;
+    case 0x21: itype = LM32_INSN_NOR;    goto decode_insn_format_nor;
+    case 0x22: itype = LM32_INSN_MUL;    goto decode_insn_format_mul;
+    case 0x23: itype = LM32_INSN_DIVU;   goto decode_insn_format_divu;
+    case 0x24: itype = LM32_INSN_RCSR;   goto decode_insn_format_rcsr;
+    case 0x25: itype = LM32_INSN_SR;     goto decode_insn_format_sr;
+    case 0x26: itype = LM32_INSN_XOR;    goto decode_insn_format_xor;
+    case 0x27: itype = LM32_INSN_DIV;    goto decode_insn_format_div;
+    case 0x28: itype = LM32_INSN_AND;    goto decode_insn_format_and;
+    case 0x29: itype = LM32_INSN_XNOR;   goto decode_insn_format_xnor;
+    case 0x2B:
+    {
+        int imm = insn & 0x1f;
+        if (imm == 2) { itype = LM32_INSN_BREAK; goto decode_insn_format_break; }
+        if (imm == 7) { itype = LM32_INSN_SCALL; goto decode_insn_format_scall; }
+        itype = LM32_INSN_RAISE;
+        goto decode_insn_format_raise;
+    }
+    case 0x2C: itype = LM32_INSN_SEXTB;  goto decode_insn_format_sextb;
+    case 0x2D: itype = LM32_INSN_ADD;    goto decode_insn_format_add;
+    case 0x2E: itype = LM32_INSN_OR;     goto decode_insn_format_or;
+    case 0x2F: itype = LM32_INSN_SL;     goto decode_insn_format_sl;
+    case 0x30:
+    {
+        int r0 = f_r0(insn);
+        if (r0 == OPVAL_HW_H_RA) { itype = LM32_INSN_RET;  goto decode_insn_format_ret; }
+        if (r0 == OPVAL_HW_H_EA) { itype = LM32_INSN_ERET; goto decode_insn_format_eret; }
+        if (r0 == OPVAL_HW_H_BA) { itype = LM32_INSN_BRET; goto decode_insn_format_bret; }
+        itype = LM32_INSN_B;
+        goto decode_insn_format_b;
+    }
+    case 0x31: itype = LM32_INSN_MODU;   goto decode_insn_format_modu;
+    case 0x32: itype = LM32_INSN_SUB;    goto decode_insn_format_sub;
+    case 0x33: itype = LM32_INSN_USER;   goto decode_insn_format_user;
+    case 0x34: itype = LM32_INSN_WCSR;   goto decode_insn_format_wcsr;
+    case 0x35: itype = LM32_INSN_MOD;    goto decode_insn_format_mod;
+    case 0x36: itype = LM32_INSN_CALL;   goto decode_insn_format_call;
+    case 0x37: itype = LM32_INSN_SEXTH;  goto decode_insn_format_sexth;
+    case 0x38: itype = LM32_INSN_BI;     goto decode_insn_format_bi;
+    case 0x39: itype = LM32_INSN_CMPE;   goto decode_insn_format_cmpe;
+    case 0x3A: itype = LM32_INSN_CMPG;   goto decode_insn_format_cmpg;
+    case 0x3B: itype = LM32_INSN_CMPGE;  goto decode_insn_format_cmpge;
+    case 0x3C: itype = LM32_INSN_CMPGEU; goto decode_insn_format_cmpgeu;
+    case 0x3D: itype = LM32_INSN_CMPGU;  goto decode_insn_format_cmpgu;
+    case 0x3E: itype = LM32_INSN_CALLI;  goto decode_insn_format_calli;
+    case 0x3F: itype = LM32_INSN_CMPNE;  goto decode_insn_format_cmpne;
+    default:
+        itype = LM32_INSN_X_INVALID;
+        goto decode_insn_format_empty;
+    }
 
     /* The instruction has been decoded, now extract the fields. */
 decode_insn_format_empty:
@@ -664,6 +685,27 @@ decode_insn_format_cmpnei:
         ida_insn.size = 4;
         return 4;
     }
+decode_insn_format_div:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
 decode_insn_format_divu:
     {
         int i_opcode = f_opcode(insn);
@@ -700,7 +742,7 @@ decode_insn_format_lb:
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op2.type = o_displ;
-        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.dtype = dt_byte;
         ida_insn.Op2.addr = i_imm;
         ida_insn.itype = itype;
         ida_insn.size = 4;
@@ -721,7 +763,7 @@ decode_insn_format_lbu:
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op2.type = o_displ;
-        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.dtype = dt_byte;
         ida_insn.Op2.addr = i_imm;
         ida_insn.itype = itype;
         ida_insn.size = 4;
@@ -742,7 +784,7 @@ decode_insn_format_lh:
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op2.type = o_displ;
-        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.dtype = dt_word;
         ida_insn.Op2.addr = i_imm;
         ida_insn.itype = itype;
         ida_insn.size = 4;
@@ -763,7 +805,7 @@ decode_insn_format_lhu:
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op2.type = o_displ;
-        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.dtype = dt_word;
         ida_insn.Op2.addr = i_imm;
         ida_insn.itype = itype;
         ida_insn.size = 4;
@@ -784,8 +826,29 @@ decode_insn_format_lw:
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op2.type = o_displ;
-        ida_insn.Op2.dtype = get_dtype_by_size(4);
+        ida_insn.Op2.dtype = dt_dword;
         ida_insn.Op2.addr = i_imm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_mod:
+    {
+        int i_opcode = f_opcode(insn);
+        int i_r0 = f_r0(insn);
+        int i_r1 = f_r1(insn);
+        int i_r2 = f_r2(insn);
+        int i_resv0 = f_resv0(insn);
+
+        ida_insn.Op1.type = o_reg;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_R2;
+        ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r2;
+        ida_insn.Op2.type = o_reg;
+        ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
+        ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
+        ida_insn.Op3.type = o_reg;
+        ida_insn.Op3.lm32_type = LM32_OPERAND_R1;
+        ida_insn.Op3.reg = OPVAL_H_GR_BASE + i_r1;
         ida_insn.itype = itype;
         ida_insn.size = 4;
         return 4;
@@ -897,7 +960,7 @@ decode_insn_format_nori:
     }
 decode_insn_format_or:
     {
-        if ((insn & 0xfc1f07ff) == 0xb8000000) { itype = LM32_INSN_MV; goto decode_insn_format_mv; } // mv              $r2,$r0
+        if (f_r1(insn) == 0) { itype = LM32_INSN_MV; goto decode_insn_format_mv; } // mv              $r2,$r0
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
@@ -1007,7 +1070,7 @@ decode_insn_format_sb:
         ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op1.type = o_displ;
-        ida_insn.Op1.dtype = get_dtype_by_size(4);
+        ida_insn.Op1.dtype = dt_byte;
         ida_insn.Op1.addr = i_imm;
         ida_insn.Op2.type = o_reg;
         ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
@@ -1064,7 +1127,7 @@ decode_insn_format_sh:
         ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op1.type = o_displ;
-        ida_insn.Op1.dtype = get_dtype_by_size(4);
+        ida_insn.Op1.dtype = dt_word;
         ida_insn.Op1.addr = i_imm;
         ida_insn.Op2.type = o_reg;
         ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
@@ -1099,7 +1162,7 @@ decode_insn_format_sli:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        int i_shift = f_shift(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -1108,9 +1171,9 @@ decode_insn_format_sli:
         ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         ida_insn.Op3.type = o_imm;
-        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.dtype = dt_byte;
         ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
-        ida_insn.Op3.value = i_imm;
+        ida_insn.Op3.value = i_shift;
         ida_insn.itype = itype;
         ida_insn.size = 4;
         return 4;
@@ -1141,7 +1204,7 @@ decode_insn_format_sri:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        int i_shift = f_shift(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -1150,9 +1213,9 @@ decode_insn_format_sri:
         ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         ida_insn.Op3.type = o_imm;
-        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.dtype = dt_byte;
         ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
-        ida_insn.Op3.value = i_imm;
+        ida_insn.Op3.value = i_shift;
         ida_insn.itype = itype;
         ida_insn.size = 4;
         return 4;
@@ -1183,7 +1246,7 @@ decode_insn_format_srui:
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
-        int i_imm = f_imm(insn);
+        int i_shift = f_shift(insn);
 
         ida_insn.Op1.type = o_reg;
         ida_insn.Op1.lm32_type = LM32_OPERAND_R1;
@@ -1192,9 +1255,9 @@ decode_insn_format_srui:
         ida_insn.Op2.lm32_type = LM32_OPERAND_R0;
         ida_insn.Op2.reg = OPVAL_H_GR_BASE + i_r0;
         ida_insn.Op3.type = o_imm;
-        ida_insn.Op3.dtype = get_dtype_by_size(4);
+        ida_insn.Op3.dtype = dt_byte;
         ida_insn.Op3.lm32_type = LM32_OPERAND_IMM;
-        ida_insn.Op3.value = i_imm;
+        ida_insn.Op3.value = i_shift;
         ida_insn.itype = itype;
         ida_insn.size = 4;
         return 4;
@@ -1232,7 +1295,7 @@ decode_insn_format_sw:
         ida_insn.Op1.reg = OPVAL_H_GR_BASE + i_r0;
         // TODO: Please clean up the .type reg setting above....
         ida_insn.Op1.type = o_displ;
-        ida_insn.Op1.dtype = get_dtype_by_size(4);
+        ida_insn.Op1.dtype = dt_dword;
         ida_insn.Op1.addr = i_imm;
         ida_insn.Op2.type = o_reg;
         ida_insn.Op2.lm32_type = LM32_OPERAND_R1;
@@ -1328,7 +1391,7 @@ decode_insn_format_xori:
     }
 decode_insn_format_xnor:
     {
-        if ((insn & 0xfc1f07ff) == 0xa4000000) { itype = LM32_INSN_NOT; goto decode_insn_format_not; } // not             $r2,$r0
+        if (f_r1(insn) == 0) { itype = LM32_INSN_NOT; goto decode_insn_format_not; } // not             $r2,$r0
         int i_opcode = f_opcode(insn);
         int i_r0 = f_r0(insn);
         int i_r1 = f_r1(insn);
@@ -1365,6 +1428,17 @@ decode_insn_format_xnori:
         ida_insn.Op3.dtype = get_dtype_by_size(4);
         ida_insn.Op3.lm32_type = LM32_OPERAND_UIMM;
         ida_insn.Op3.value = i_uimm;
+        ida_insn.itype = itype;
+        ida_insn.size = 4;
+        return 4;
+    }
+decode_insn_format_raise:
+    {
+        int imm = insn & 0x1f;
+        ida_insn.Op1.type = o_imm;
+        ida_insn.Op1.dtype = dt_byte;
+        ida_insn.Op1.lm32_type = LM32_OPERAND_IMM;
+        ida_insn.Op1.value = imm;
         ida_insn.itype = itype;
         ida_insn.size = 4;
         return 4;

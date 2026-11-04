@@ -50,7 +50,11 @@ void LM32_t::load_from_idb()
 bool LM32_t::LM32_find_ioport_bit(outctx_t& ctx, int port, int bit)
 {
     const ioport_bit_t* b = find_ioport_bit(ioh.ports, port, bit);
-    if (b != nullptr && !b->name.empty()) ctx.out_line(b->name.c_str(), COLOR_IMPNAME); return true;
+    if (b != nullptr && !b->name.empty())
+    {
+        ctx.out_line(b->name.c_str(), COLOR_IMPNAME);
+        return true;
+    }
 
     return false;
 }
@@ -70,6 +74,126 @@ ssize_t idaapi LM32_t::on_event(ssize_t msgid, va_list va)
         iohandler_t::parse_area_line0_t cb(ioh);
         if (choose_ioport_device2(&ioh.device, cfgfile, &cb))
             ioh.set_device_name(ioh.device.c_str(), IORESP_ALL);
+        break;
+    }
+    case processor_t::ev_setup_til:
+    {
+        inf_set_cc_id(COMP_GNU);
+        inf_set_cc_cm(CM_N32_F48 | CM_CC_CDECL);
+        inf_set_cc_defalign(4);
+        inf_set_cc_size_i(4);
+        inf_set_cc_size_b(1);
+        inf_set_cc_size_e(4);
+        inf_set_cc_size_s(2);
+        inf_set_cc_size_l(4);
+        inf_set_cc_size_ll(8);
+        inf_set_cc_size_ldbl(8);
+        return 1;
+    }
+    case processor_t::ev_max_ptr_size:
+        return 4;
+    case processor_t::ev_calc_cdecl_purged_bytes:
+        return 0;
+    case processor_t::ev_get_cc_regs:
+    {
+        callregs_t* callregs = va_arg(va, callregs_t*);
+        callcnv_t cc = va_arg(va, callcnv_t);
+        static const int lm32_argregs[] = { 1, 2, 3, 4, 5, 6, 7, 8, -1 };
+        callregs->set(ARGREGS_INDEPENDENT, lm32_argregs, nullptr);
+        return 1;
+    }
+    case processor_t::ev_calc_retloc:
+    {
+        argloc_t* retloc = va_arg(va, argloc_t*);
+        const tinfo_t* type = va_arg(va, const tinfo_t*);
+        cm_t cc = va_arg(va, cm_t);
+        if (type->is_void())
+            return 1;
+        size_t size = type->get_size();
+        if (size == BADSIZE || size == 0)
+            return -1;
+        if (size <= 4)
+            retloc->set_reg1(1); // r1
+        else if (size <= 8)
+            retloc->set_reg2(1, 2); // r1:r2
+        else
+            return -1;
+        return 1;
+    }
+    case processor_t::ev_calc_arglocs:
+    {
+        func_type_data_t* fti = va_arg(va, func_type_data_t*);
+        if (!fti->rettype.is_void())
+        {
+            size_t retsize = fti->rettype.get_size();
+            if (retsize != BADSIZE && retsize > 0)
+            {
+                if (retsize <= 4)
+                    fti->retloc.set_reg1(1);
+                else if (retsize <= 8)
+                    fti->retloc.set_reg2(1, 2);
+            }
+        }
+        int r = 0; // argreg index: 0 = r1, ..., 7 = r8
+        size_t retsize = fti->rettype.get_size();
+        if (retsize != BADSIZE && retsize > 8)
+            r++; // struct return pointer in r1
+
+        sval_t spoff = 0;
+        for (size_t i = 0; i < fti->size(); ++i)
+        {
+            funcarg_t& fa = (*fti)[i];
+            size_t size = fa.type.get_size();
+            if (size == BADSIZE || size == 0)
+                return -1;
+            int nregs = (int(size) + 3) / 4;
+            if (r + nregs <= 8 && nregs <= 2)
+            {
+                if (nregs == 1)
+                    fa.argloc.set_reg1(1 + r);
+                else
+                    fa.argloc.set_reg2(1 + r, 1 + r + 1);
+                r += nregs;
+            }
+            else
+            {
+                spoff = align_up(spoff, 4);
+                fa.argloc.set_stkoff(spoff);
+                spoff += align_up(sval_t(size), 4);
+            }
+        }
+        fti->stkargs = spoff;
+        return 1;
+    }
+    case processor_t::ev_is_sp_based:
+    {
+        int* mode = va_arg(va, int*);
+        const insn_t* insn = va_arg(va, const insn_t*);
+        const op_t* op = va_arg(va, const op_t*);
+        *mode = is_sp_based(*insn, *op);
+        return 1;
+    }
+    case processor_t::ev_create_function_frame:
+    {
+        ea_t func_ea = va_arg(va, ea_t);
+        return create_func_frame(func_ea) ? 1 : 0;
+    }
+    case processor_t::ev_is_call_insn:
+    {
+        const insn_t* insn = va_arg(va, const insn_t*);
+        return (insn->itype == LM32_INSN_CALL || insn->itype == LM32_INSN_CALLI) ? 1 : -1;
+    }
+    case processor_t::ev_is_ret_insn:
+    {
+        const insn_t* insn = va_arg(va, const insn_t*);
+        uchar iri_flags = va_arg(va, int);
+        if (insn->itype == LM32_INSN_RET
+            || insn->itype == LM32_INSN_ERET
+            || insn->itype == LM32_INSN_BRET)
+            return 1;
+        if (insn->itype == LM32_INSN_B && insn->Op1.type == o_reg && insn->Op1.reg == OPVAL_HW_H_RA)
+            return 1;
+        return -1;
     }
     case processor_t::ev_ending_undo:
     case processor_t::ev_oldfile:
@@ -149,7 +273,7 @@ ssize_t idaapi LM32_t::on_event(ssize_t msgid, va_list va)
         if (machine_type == 0x8A)
         {
             *p_procname = "LM32";
-            code = 0xBABE;
+            code = machine_type;
         }
         break;
     }
@@ -311,6 +435,8 @@ static const char* const RegNames[] =
     "PSW",
     "TLBVAD",
     "TLBPAD",
+    "cs",
+    "ds",
 };
 
 processor_t LPH =
@@ -334,11 +460,11 @@ processor_t LPH =
     RegNames,
     qnumber(RegNames),       // number of registers
 
-    qnumber(RegNames) - 2,     // first
-    qnumber(RegNames) - 1,     // last
+    r_cs,                    // first
+    r_ds,                    // last
     0,                       // size of a segment register
-    qnumber(RegNames) - 2,     // virtual CS
-    qnumber(RegNames) - 1,     // virtual DS
+    r_cs,                    // virtual CS
+    r_ds,                    // virtual DS
 
     NULL,                    // no known code start sequences
     retcodes,                // 'Return' instruction codes
