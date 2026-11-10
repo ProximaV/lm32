@@ -88,6 +88,7 @@ ssize_t idaapi LM32_t::on_event(ssize_t msgid, va_list va)
         inf_set_cc_size_l(4);
         inf_set_cc_size_ll(8);
         inf_set_cc_size_ldbl(8);
+        add_til("gnucmn", ADDTIL_DEFAULT);
         return 1;
     }
     case processor_t::ev_max_ptr_size:
@@ -444,7 +445,7 @@ processor_t LPH =
     IDP_INTERFACE_VERSION,   // version
     PLFM_LM32,               // id
     // flag
-    PR_USE32|PR_DEFSEG32|PRN_HEX|PR_RNAMESOK|PR_ALIGN,  
+    PR_USE32|PR_DEFSEG32|PRN_HEX|PR_RNAMESOK|PR_ALIGN|PR_TYPEINFO,  
 
     0,                       // the module has processor-specific configuration options
     8,                       // 8 bits in a byte for code segments
